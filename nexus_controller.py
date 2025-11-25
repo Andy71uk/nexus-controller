@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.1 (Validation Fix)"
+VERSION = "4.9.2 (Command Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-safe-secure-key-v4-9-1"
+app.secret_key = "nexus-cmd-fix-secure-key-v4-9-2"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -137,8 +137,13 @@ def perform_health_check():
     return report
 
 # --- HTML Frontend ---
-# Split into smaller chunks to be safer for copy/pasting
-STYLE_CSS = """
+HTML_HEADER = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -214,16 +219,6 @@ STYLE_CSS = """
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
-"""
-
-HTML_HEADER = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
-{STYLE_CSS}
 </head>
 """
 
@@ -294,6 +289,9 @@ HTML_BODY = """
             
             <div class="grid-split" style="height: 100%;">
                 <div style="overflow-y:auto; padding-right:10px;">
+                    <div style="margin-bottom:15px; font-size:0.8rem; color:#94a3b8;">
+                        Active Screens: <span id="active-screens" style="color:#e2e8f0; font-family:monospace;">Checking...</span>
+                    </div>
                     
                     <div class="mc-group">
                         <div class="mc-label">VITAL COMMANDS</div>
@@ -570,6 +568,8 @@ HTML_BODY = """
                 } else {
                     s.innerHTML = `<span style="color:#ef4444">OFFLINE</span>`;
                 }
+                
+                document.getElementById('active-screens').innerText = d.screens || 'No Sockets Found';
             });
         }, 5000);
 
@@ -753,11 +753,10 @@ def mc_cmd():
         c = request.get_json().get('cmd')
         if not c: return jsonify({'error': 'Empty command'})
         
-        # Sanitize command (strip leading slash if present)
         if c.startswith('/'): c = c[1:]
         
-        # Send to screen session
-        cmd = f"screen -S {MC_SCREEN_NAME} -p 0 -X stuff '{c}\\r'"
+        # Updated: Use double quotes and newline
+        cmd = f"screen -S {MC_SCREEN_NAME} -p 0 -X stuff \"{c}\n\""
         subprocess.run(cmd, shell=True)
         return jsonify({'status': 'ok'})
     except Exception as e:
@@ -825,9 +824,20 @@ def mc_status():
                 mem = round(int(m) / 1024, 1)
             except: pass
             
-        return jsonify({'running': True, 'pid': p, 'mem': mem})
+        # Check screens
+        screens = "No Sockets Found"
+        try:
+            screens = subprocess.check_output("screen -ls", shell=True).decode().strip()
+        except: pass
+
+        return jsonify({'running': True, 'pid': p, 'mem': mem, 'screens': screens})
     except:
-        return jsonify({'running': False, 'pid': None, 'mem': 0})
+        # Even if not running, check screens to debug
+        screens = "No Sockets Found"
+        try:
+            screens = subprocess.check_output("screen -ls", shell=True).decode().strip()
+        except: pass
+        return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': screens})
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
@@ -882,16 +892,6 @@ def check_update():
         return jsonify({'update': False})
     except:
         return jsonify({'update': False})
-
-@app.route('/debug/github')
-def debug_github():
-    try:
-        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
-        with urllib.request.urlopen(url) as response:
-            code = response.read().decode('utf-8')
-        return f"<pre>{code[:500]}... \n\n ...{code[-500:]}</pre>"
-    except Exception as e:
-        return str(e)
 
 @app.route('/code/raw')
 def get_raw_code():
