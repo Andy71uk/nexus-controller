@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.4 (Safe Mode)"
+VERSION = "4.9.5 (Screen Debug)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-safe-mode-secure-key-v4-9-4"
+app.secret_key = "nexus-debug-secure-key-v4-9-5"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -74,6 +74,7 @@ def get_host_info():
     return info
 
 def get_system_stats():
+    # CPU Temp
     temp = 0
     try:
         r = subprocess.check_output("vcgencmd measure_temp", shell=True, stderr=subprocess.DEVNULL)
@@ -85,6 +86,7 @@ def get_system_stats():
                 if val > 0: temp = round(val, 1)
         except: pass
 
+    # CPU Load
     load = 0
     try:
         l1, l5, l15 = os.getloadavg()
@@ -92,7 +94,10 @@ def get_system_stats():
         load = round((l1 / cores) * 100, 1)
     except: pass
 
-    mem = 0; disk = 0; uptime = "Unknown"
+    # Mem / Disk
+    mem = 0
+    disk = 0
+    uptime = "Unknown"
     try:
         m = subprocess.check_output("free -m", shell=True).decode().splitlines()[1].split()
         mem = round((int(m[2])/int(m[1]))*100, 1)
@@ -284,10 +289,8 @@ def mc_cmd():
         
         if c.startswith('/'): c = c[1:]
         
-        # Use double quotes and newline for command stuff
-        # IMPORTANT: We use sudo -u to execute as the correct user
-        
-        screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\n"'
+        # Use double quotes and Carriage Return \r for reliable screen injection
+        screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
         
         if MC_USER != "root":
             # Wrap the screen command in sudo for the specific user
@@ -367,20 +370,46 @@ def mc_status():
         try:
             # Check screens for the specific user
             if MC_USER != "root":
-                 screens = subprocess.check_output(f"sudo -u {MC_USER} screen -ls", shell=True).decode().strip()
+                # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
+                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
+                # We use run to capture output regardless of return code.
+                cmd = f"sudo -u {MC_USER} screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                out = res.stdout.decode().strip()
+                if "No Sockets found" in out:
+                     screens = f"No screens found for user '{MC_USER}'"
+                elif res.returncode == 0:
+                     screens = out
+                else:
+                     screens = f"Error checking screens for '{MC_USER}': {out}"
             else:
-                 screens = subprocess.check_output("screen -ls", shell=True).decode().strip()
-        except: pass
+                 cmd = "screen -ls"
+                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                 out = res.stdout.decode().strip()
+                 if "No Sockets found" in out:
+                      screens = "No screens found for user 'root'"
+                 elif res.returncode == 0:
+                      screens = out
+                 else:
+                      screens = f"Error checking screens: {out}"
+        except Exception as e: 
+             screens = f"Check Failed: {str(e)}"
 
         return jsonify({'running': True, 'pid': p, 'mem': mem, 'screens': screens})
     except:
         # Even if not running, check screens to debug
-        screens = "No Sockets Found"
+        screens = "Check Failed"
         try:
             if MC_USER != "root":
-                 screens = subprocess.check_output(f"sudo -u {MC_USER} screen -ls", shell=True).decode().strip()
+                cmd = f"sudo -u {MC_USER} screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                screens = res.stdout.decode().strip()
             else:
-                 screens = subprocess.check_output("screen -ls", shell=True).decode().strip()
+                cmd = "screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                screens = res.stdout.decode().strip()
+            
+            if "No Sockets found" in screens: screens = f"No screens found for user '{MC_USER}'"
         except: pass
         return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': screens})
 
