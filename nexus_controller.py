@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.4 (System Insight)"
+VERSION = "4.4.1 (Smart Update)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-insight-secure-key-v4-4"
+app.secret_key = "nexus-insight-secure-key-v4-4-1"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
@@ -199,6 +199,8 @@ HTML_HEADER = """
     table { width: 100%; border-collapse: collapse; }
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
     th { color: #94a3b8; font-size: 0.9rem; }
+    
+    textarea { flex: 1; background: #0f172a; color: #a5b4fc; border: 1px solid #334155; padding: 10px; font-family: monospace; resize: none; }
     
     /* Health Check Styles */
     .health-grid { display: grid; gap: 10px; }
@@ -417,6 +419,8 @@ HTML_BODY = """
             fetch('/code/pull_github', {method:'POST'}).then(r=>r.json()).then(d=>{
                 if(d.status === 'ok') {
                     triggerRestart();
+                } else if (d.status === 'no_update') {
+                    alert(d.message);
                 } else {
                     alert("Update failed: " + d.error);
                 }
@@ -660,6 +664,13 @@ def pull_github():
             compile(new_code, '<string>', 'exec')
         except SyntaxError as e:
             return jsonify({'status': 'error', 'error': f'Syntax Error in GitHub code: Line {e.lineno}'})
+
+        # 3. Version Check (NEW)
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', new_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver == VERSION:
+                return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
 
         with open(__file__, 'w') as f:
             f.write(new_code)
