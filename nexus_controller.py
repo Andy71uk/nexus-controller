@@ -9,6 +9,7 @@ import base64
 import urllib.request
 import platform
 import socket
+import pwd
 from flask import Flask, render_template_string, request, jsonify, Response, session, redirect, url_for
 
 # --- CRASH LOGGING ---
@@ -18,9 +19,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.4 (Process Discovery)"
+VERSION = "5.5 (Deep Diagnostics)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-process-discovery-secure-key-v5-4"
+app.secret_key = "nexus-deep-diag-secure-key-v5-5"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -133,28 +134,35 @@ def perform_health_check():
 
     return report
 
-# --- HELPER: Find Minecraft User ---
-def get_mc_process_owner():
+# --- HELPER: Find Minecraft User & Process ---
+def get_mc_details():
+    pid = None
+    owner = None
+    parent = None
+    
+    # 1. Try to find JAVA process running from MC_PATH
     try:
-        # 1. Try specific jar name first
-        pids = []
-        try:
-            pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
-        except: pass
-        
-        # 2. Fallback to generic java
-        if not pids:
-            try:
-                pids = subprocess.check_output("pgrep java", shell=True).decode().strip().split()
-            except: pass
-
-        if pids:
-            # Take the first PID found
-            pid = pids[0]
-            owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
-            return owner, pid
+        # List all java processes with PID, User, and Command
+        procs = subprocess.check_output("ps -eo pid,user,cmd | grep java", shell=True).decode().splitlines()
+        for p in procs:
+            if "grep" in p: continue
+            # If the path matches or it's just a generic java command we suspect
+            if MC_PATH in p or "server.jar" in p:
+                parts = p.strip().split()
+                pid = parts[0]
+                owner = parts[1]
+                break
     except: pass
-    return "Unknown", None
+
+    if pid:
+        try:
+            # Get Parent Process Name
+            ppid = subprocess.check_output(f"ps -o ppid= -p {pid}", shell=True).decode().strip()
+            parent_name = subprocess.check_output(f"ps -o comm= -p {ppid}", shell=True).decode().strip()
+            parent = f"{parent_name} (PID {ppid})"
+        except: parent = "Unknown"
+        
+    return pid, owner, parent
 
 # --- HTML Frontend ---
 STYLE_CSS = """
@@ -315,7 +323,7 @@ BODY = """
                         Process Owner: <span id="proc-owner" style="color:#e2e8f0; font-family:monospace;">Scanning...</span>
                     </div>
                     <div style="margin-bottom:15px; font-size:0.8rem; color:#94a3b8;">
-                        Server Path: <span id="path-status" style="color:#e2e8f0; font-family:monospace;">Checking...</span>
+                        Parent Process: <span id="parent-proc" style="color:#e2e8f0; font-family:monospace;">Scanning...</span>
                     </div>
                     
                     <div class="mc-group">
@@ -591,7 +599,7 @@ SCRIPT = """
             fetch('/minecraft/status').then(r=>r.json()).then(d=>{
                 const s = document.getElementById('mc-status');
                 if(d.running) {
-                    s.innerHTML = `<span style="color:#22c55e">ONLINE</span> (RAM: ${d.mem} MB)`;
+                    s.innerHTML = `<span style="color:#22c55e">ONLINE</span> (RAM: '+d.mem+' MB)`;
                 } else {
                     s.innerHTML = `<span style="color:#ef4444">OFFLINE</span>`;
                 }
@@ -599,9 +607,13 @@ SCRIPT = """
                 document.getElementById('active-screens').innerText = d.screens || 'No Sockets Found';
                 document.getElementById('proc-owner').innerText = d.owner || 'Unknown';
                 
-                const ps = document.getElementById('path-status');
-                ps.innerText = d.path_status;
-                ps.style.color = d.path_status === "Valid" ? "#22c55e" : "#ef4444";
+                // Parse Parent
+                const p = document.getElementById('parent-proc');
+                if(d.parent && d.parent.toLowerCase().includes('screen')) {
+                    p.innerHTML = '<span style="color:#22c55e">✅ SCREEN</span>';
+                } else {
+                     p.innerHTML = '<span style="color:#ef4444">⚠️ ' + (d.parent || 'None') + '</span>';
+                }
             });
         }, 5000);
 
@@ -875,29 +887,23 @@ def mc_status():
         # Check screens
         screens = "No Sockets Found"
         owner = "Unknown"
+        parent = "Unknown"
         path_status = "Unknown"
         
-        # Check Path Access
-        if os.path.exists(MC_PATH):
-             path_status = "Valid"
-        else:
-             path_status = f"Invalid Path: {MC_PATH}"
-
-        try:
-            # Get owner of the java process
-            if p:
-                owner = subprocess.check_output(f"ps -o user= -p {p}", shell=True).decode().strip()
-        except: pass
+        if p:
+            # Get Owner and Parent
+            owner, _p, parent = get_mc_details()
         
         # Determine target user for screen check
         target_user = MC_USER
-        if target_user == "auto" and owner != "Unknown":
+        if target_user == "auto" and owner != "Unknown" and owner is not None:
             target_user = owner
+        elif target_user == "auto":
+            target_user = "root"
 
         try:
             # Check screens for the specific user
             if target_user != "root":
-                # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
@@ -906,7 +912,7 @@ def mc_status():
                 elif res.returncode == 0:
                      screens = out
                 else:
-                     screens = f"Error checking screens for '{target_user}': {out}"
+                     screens = f"Error: {out}"
             else:
                  cmd = "screen -ls"
                  res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -916,33 +922,13 @@ def mc_status():
                  elif res.returncode == 0:
                       screens = out
                  else:
-                      screens = f"Error checking screens: {out}"
+                      screens = f"Error: {out}"
         except Exception as e: 
              screens = f"Check Failed: {str(e)}"
 
-        return jsonify({'running': True, 'pid': p, 'mem': mem, 'screens': screens, 'owner': owner, 'path_status': path_status})
+        return jsonify({'running': True, 'pid': p, 'mem': mem, 'screens': screens, 'owner': owner, 'parent': parent})
     except:
-        # Even if not running, check screens to debug
-        screens = "Check Failed"
-        owner = "None"
-        path_status = "Unknown"
-        if os.path.exists(MC_PATH): path_status = "Valid"
-        else: path_status = f"Invalid: {MC_PATH}"
-        
-        try:
-            target_user = MC_USER if MC_USER != "auto" else "root"
-            if target_user != "root":
-                cmd = f"sudo -u {target_user} screen -ls"
-                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                screens = res.stdout.decode().strip()
-            else:
-                cmd = "screen -ls"
-                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                screens = res.stdout.decode().strip()
-            
-            if "No Sockets found" in screens: screens = f"No screens found for user '{target_user}'"
-        except: pass
-        return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': screens, 'owner': owner, 'path_status': path_status})
+        return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': "Unknown", 'owner': "Unknown", 'parent': "Unknown"})
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
