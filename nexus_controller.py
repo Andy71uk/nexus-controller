@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.3.1 (GitHub Only and newaddress)"
+VERSION = "4.3.2 (GitHub Only and newaddress)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-github-only-secure-key-v4-3"
 
