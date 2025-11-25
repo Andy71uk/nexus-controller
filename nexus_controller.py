@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.6 (Deep Scan)"
+VERSION = "4.9.7 (Structure Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-deepscan-secure-key-v4-9-6"
+app.secret_key = "nexus-structure-fix-secure-key-v4-9-7"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -138,19 +138,13 @@ def perform_health_check():
 
     return report
 
-# --- HTML Frontend ---
-HTML_HEADER = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+# --- UI COMPONENTS ---
+
+STYLE = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     
-    /* Login */
     .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg); z-index:99; display: flex; justify-content: center; align-items: center; }
     .box { background: var(--panel); padding: 30px; border: 1px solid var(--prim); border-radius: 10px; text-align: center; width: 300px; }
     input { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; width: 100%; margin-bottom: 10px; box-sizing: border-box; text-align: center; }
@@ -158,7 +152,6 @@ HTML_HEADER = """
     .btn:hover { opacity: 0.9; }
     .err { color: var(--red); margin-top: 10px; }
 
-    /* App */
     header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px; }
     .brand { font-family: 'Orbitron'; font-size: 1.4rem; color: white; }
     .tabs { display: flex; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -183,7 +176,8 @@ HTML_HEADER = """
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
     th { color: #94a3b8; font-size: 0.9rem; }
     
-    /* Health & Info */
+    textarea { flex: 1; background: #0f172a; color: #a5b4fc; border: 1px solid #334155; padding: 10px; font-family: monospace; resize: none; }
+    
     .health-grid { display: grid; gap: 10px; }
     .health-item { display: flex; align-items: center; justify-content: space-between; padding: 15px; background: #0f172a; border-radius: 5px; border-left: 4px solid #555; }
     .h-pass { border-left-color: var(--green); } .h-fail { border-left-color: var(--red); } .h-warn { border-left-color: var(--warn); }
@@ -196,23 +190,18 @@ HTML_HEADER = """
     .info-label { font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:3px; }
     .info-val { font-family:monospace; font-size:0.95rem; color:#e2e8f0; word-break:break-all; }
 
-    /* Minecraft Styles */
-    .mc-group { margin-bottom: 15px; }
-    .mc-label { color: #94a3b8; font-size:0.8rem; margin-bottom:5px; text-transform:uppercase; }
+    .mc-group { margin-bottom: 15px; } .mc-label { color: #94a3b8; font-size:0.8rem; margin-bottom:5px; text-transform:uppercase; }
     .mc-btn-row { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
     .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; }
     .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
     .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
 
-    /* Installer Modal */
     .install-cmd { background: #000; color: #4ade80; padding: 15px; border-radius: 5px; font-family: monospace; margin: 15px 0; word-break: break-all; border: 1px solid #333; }
     
-    /* Dynamic Bar Colors */
     .fill-green { background-color: var(--green); box-shadow: 0 0 5px var(--green); }
     .fill-warn { background-color: var(--warn); box-shadow: 0 0 5px var(--warn); }
     .fill-red { background-color: var(--red); box-shadow: 0 0 5px var(--red); }
 
-    /* Auto-Update Banner */
     #update-banner { position: fixed; bottom: 20px; right: 20px; width: 300px; background: #1e293b; border: 1px solid var(--prim); border-radius: 8px; padding: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.5); z-index: 200; display: none; flex-direction: column; gap: 10px; animation: slideUp 0.5s ease; }
     @keyframes slideUp { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     .upd-title { font-weight: bold; color: var(--prim); font-size: 1.1rem; }
@@ -221,10 +210,9 @@ HTML_HEADER = """
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
-</head>
 """
 
-HTML_BODY = """
+BODY = """
 <body>
     {% if not logged_in %}
     <div class="overlay">
@@ -447,7 +435,9 @@ HTML_BODY = """
             <p style="color:#94a3b8; font-size:0.9rem;">Reloading dashboard automatically...</p>
         </div>
     </div>
+"""
 
+SCRIPT = """
     <script>
         function view(id, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -686,3 +676,327 @@ HTML_BODY = """
     {% endif %}
 </body>
 </html>
+"""
+
+FULL_HTML = f"{HTML_HEADER}{STYLE}{BODY}{SCRIPT}"
+
+# --- Routes ---
+@app.before_request
+def check_auth():
+    # Allow installer script without login
+    if request.endpoint in ['static', 'login', 'get_installer']: return
+    if not session.get('logged_in'):
+        if request.endpoint == 'home': return
+        return jsonify({'error': 'Login Required'}), 401
+
+@app.before_request
+def tracker():
+    if request.endpoint == 'static': return
+    CLIENTS[request.remote_addr] = {'seen': time.time(), 'ua': request.user_agent.string}
+
+@app.route('/')
+def home():
+    # Pass the calculated installer URL to the template
+    return render_template_string(FULL_HTML, 
+        logged_in=session.get('logged_in'), 
+        version=VERSION, 
+        installer_url=GITHUB_INSTALLER_URL,
+        build_date=BUILD_DATE,
+        developer=DEVELOPER,
+        copyright=COPYRIGHT
+    )
+
+@app.route('/login', methods=['POST'])
+def login():
+    if request.form.get('password') == PASSWORD:
+        session['logged_in'] = True
+        return redirect('/')
+    return render_template_string(FULL_HTML, logged_in=False, error="INVALID PASSWORD", version=VERSION)
+
+@app.route('/logout')
+def logout(): session.clear(); return redirect('/')
+
+@app.route('/status')
+def status(): return jsonify(get_system_stats())
+
+@app.route('/sysinfo')
+def sysinfo(): return jsonify(get_host_info())
+
+@app.route('/execute', methods=['POST'])
+def execute():
+    try:
+        c = request.get_json().get('cmd')
+        o = subprocess.check_output(c, shell=True, stderr=subprocess.STDOUT).decode()
+        return jsonify({'output': o})
+    except Exception as e: return jsonify({'error': str(e)})
+
+@app.route('/clients')
+def clients():
+    now = time.time()
+    cl = []
+    for ip, d in list(CLIENTS.items()):
+        if now - d['seen'] > 60: del CLIENTS[ip]; continue
+        cl.append({'ip': ip, 'os': get_os_from_ua(d['ua']), 'status': 'Online'})
+    return jsonify(cl)
+
+@app.route('/health')
+def health(): return jsonify(perform_health_check())
+
+@app.route('/logs/web')
+def weblogs():
+    logs = ['/var/log/apache2/access.log', '/var/log/nginx/access.log']
+    for f in logs:
+        if os.path.exists(f):
+            try: return jsonify(subprocess.check_output(f"tail -n 20 {f}", shell=True).decode().strip().split('\n')[::-1])
+            except: pass
+    return jsonify(["No logs found"])
+
+# --- MINECRAFT ROUTES ---
+@app.route('/minecraft/cmd', methods=['POST'])
+def mc_cmd():
+    try:
+        c = request.get_json().get('cmd')
+        if not c: return jsonify({'error': 'Empty command'})
+        
+        if c.startswith('/'): c = c[1:]
+        
+        # Use double quotes and Carriage Return \r for reliable screen injection
+        screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
+        
+        if MC_USER != "root":
+            # Wrap the screen command in sudo for the specific user
+            final_cmd = f"sudo -u {MC_USER} {screen_cmd}"
+        else:
+            final_cmd = screen_cmd
+            
+        subprocess.run(final_cmd, shell=True)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/minecraft/log')
+def mc_log():
+    # ATTEMPT TO FIND THE LOG FILE AUTOMATICALLY
+    log_candidates = []
+    
+    # 1. Configured Path
+    log_candidates.append(os.path.join(MC_PATH, "logs/latest.log"))
+
+    # 2. Auto-Detect via Process
+    try:
+        # Find all PIDs matching "server.jar"
+        pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        for pid in pids:
+            try:
+                # Get Current Working Directory of the process
+                cwd = subprocess.check_output(f"readlink -f /proc/{pid}/cwd", shell=True).decode().strip()
+                log_candidates.append(os.path.join(cwd, "logs/latest.log"))
+            except: pass
+    except: pass
+
+    # 3. Last Resort: Check user home folder
+    try:
+        home_logs = subprocess.check_output("find /home -name latest.log -path '*/logs/*' -print -quit", shell=True).decode().strip()
+        if home_logs: log_candidates.append(home_logs)
+    except: pass
+    
+    # 4. Explicit SFTP Path (user hint)
+    log_candidates.append("/opt/minecraft-java-server/logs/latest.log")
+
+    # Use the first one that actually exists
+    final_path = None
+    for p in log_candidates:
+        if os.path.exists(p):
+            final_path = p
+            break
+            
+    if not final_path:
+        return jsonify([f"Log file not found. Checked: {log_candidates}"])
+
+    try:
+        # Read last 50 lines
+        output = subprocess.check_output(f"tail -n 50 '{final_path}'", shell=True).decode('utf-8', errors='ignore')
+        return jsonify(output.strip().split('\n'))
+    except Exception as e:
+        return jsonify([str(e)])
+
+@app.route('/minecraft/status')
+def mc_status():
+    try:
+        # Check if java process for server.jar is running
+        # We grep for server.jar (common name) or just java if fuzzy
+        p = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
+        
+        # Get RAM usage if running
+        mem = 0
+        if p:
+            try:
+                # Get RSS memory in KB, convert to MB
+                m = subprocess.check_output(f"ps -o rss= -p {p}", shell=True).decode().strip()
+                mem = round(int(m) / 1024, 1)
+            except: pass
+            
+        # Check screens
+        screens = "No Sockets Found"
+        owner = "Unknown"
+        path_status = "Unknown"
+        
+        # Check Path Access
+        if os.path.exists(MC_PATH):
+             path_status = "Valid"
+        else:
+             path_status = f"Invalid Path: {MC_PATH}"
+
+        try:
+            # Get owner of the java process
+            if p:
+                owner = subprocess.check_output(f"ps -o user= -p {p}", shell=True).decode().strip()
+        except: pass
+
+        try:
+            # Check screens for the specific user
+            if MC_USER != "root":
+                # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
+                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
+                # We use run to capture output regardless of return code.
+                cmd = f"sudo -u {MC_USER} screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                out = res.stdout.decode().strip()
+                if "No Sockets found" in out:
+                     screens = f"No screens found for user '{MC_USER}'"
+                elif res.returncode == 0:
+                     screens = out
+                else:
+                     screens = f"Error checking screens for '{MC_USER}': {out}"
+            else:
+                 cmd = "screen -ls"
+                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                 out = res.stdout.decode().strip()
+                 if "No Sockets found" in out:
+                      screens = "No screens found for user 'root'"
+                 elif res.returncode == 0:
+                      screens = out
+                 else:
+                      screens = f"Error checking screens: {out}"
+        except Exception as e: 
+             screens = f"Check Failed: {str(e)}"
+
+        return jsonify({'running': True, 'pid': p, 'mem': mem, 'screens': screens, 'owner': owner, 'path_status': path_status})
+    except:
+        # Even if not running, check screens to debug
+        screens = "Check Failed"
+        owner = "None"
+        path_status = "Unknown"
+        if os.path.exists(MC_PATH): path_status = "Valid"
+        else: path_status = f"Invalid: {MC_PATH}"
+        
+        try:
+            if MC_USER != "root":
+                cmd = f"sudo -u {MC_USER} screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                screens = res.stdout.decode().strip()
+            else:
+                cmd = "screen -ls"
+                res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                screens = res.stdout.decode().strip()
+            
+            if "No Sockets found" in screens: screens = f"No screens found for user '{MC_USER}'"
+        except: pass
+        return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': screens, 'owner': owner, 'path_status': path_status})
+
+@app.route('/code/pull_github', methods=['POST'])
+def pull_github():
+    try:
+        # CACHE BUSTER: Add timestamp to URL to force fresh download
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
+            new_code = response.read().decode('utf-8')
+        
+        # 1. Basic Content Check
+        if "from flask import" not in new_code:
+             return jsonify({'status': 'error', 'error': 'Invalid file content.'})
+
+        # 2. Syntax Check (Prevent crashing the server with bad code)
+        try:
+            compile(new_code, '<string>', 'exec')
+        except SyntaxError as e:
+            return jsonify({'status': 'error', 'error': f'Syntax Error in GitHub code: Line {e.lineno}'})
+
+        # 3. Version Check (NEW)
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', new_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver == VERSION:
+                return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
+
+        with open(__file__, 'w') as f:
+            f.write(new_code)
+            
+        def restart():
+            time.sleep(1)
+            # Renamed to match the file name change
+            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            
+        threading.Thread(target=restart).start()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)})
+
+@app.route('/update/check')
+def check_update():
+    try:
+        # CACHE BUSTER here too
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
+            remote_code = response.read().decode('utf-8')
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', remote_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver != VERSION:
+                return jsonify({'update': True, 'version': remote_ver})
+        return jsonify({'update': False})
+    except:
+        return jsonify({'update': False})
+
+@app.route('/code/raw')
+def get_raw_code():
+    try:
+        with open(__file__, 'r') as f:
+            return Response(f.read(), mimetype='text/plain')
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/rescue/generate', methods=['POST'])
+def gen_rescue():
+    try:
+        with open(__file__, 'rb') as f: raw_bytes = f.read(); b64_code = base64.b64encode(raw_bytes).decode('utf-8')
+        # UPDATED: Refers to nexus_controller.py and nexus_controller service
+        rescue_script = f"""import os,sys,re,subprocess,base64; MAIN_FILE="nexus_controller.py"
+def r(): open(MAIN_FILE,'w').write(re.sub(r'PASSWORD = ".*?"','PASSWORD = "nexus"',open(MAIN_FILE).read())); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
+def f(): open(MAIN_FILE,'wb').write(base64.b64decode("{b64_code}")); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
+c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else None"""
+        with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
+        return jsonify({'status': 'ok'})
+    except Exception as e: return jsonify({'status': 'err', 'error': str(e)})
+
+@app.route('/installer.sh')
+def get_installer():
+    try:
+        with open(__file__, 'r') as f: current_code = f.read()
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        bash_script = f"""#!/bin/bash
+if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
+if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
+DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
+[Unit]\nDescription=Nexus Controller\nAfter=network.target
+[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
+[Install]\nWantedBy=multi-user.target\nSVC_EOF
+systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
+IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
+"""
+        return Response(bash_script, mimetype='text/plain')
+    except Exception as e: return str(e), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=PORT, debug=True)
