@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.8 (Critical Fix)"
+VERSION = "4.9.8.1 (Critical Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-critical-fix-secure-key-v4-9-8"
 
