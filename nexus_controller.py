@@ -18,13 +18,17 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.6 (Cloud Factory)"
+VERSION = "4.7 (About Tab)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-factory-secure-key-v4-6"
+app.secret_key = "nexus-factory-secure-key-v4-7"
+
+# --- METADATA ---
+DEVELOPER = "Andy71uk"
+BUILD_DATE = "November 25, 2025"
+COPYRIGHT = "© 2025 Nexus Systems. All rights reserved."
 
 # [IMPORTANT] GitHub Configuration
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
-# We automatically derive the installer URL from the main URL
 GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh")
 
 # --- Global State ---
@@ -230,6 +234,7 @@ HTML_BODY = """
         <button class="tab" onclick="view('logs', this)">WEB LOGS</button>
         <button class="tab" onclick="view('health', this)">SYSTEM HEALTH</button>
         <button class="tab" onclick="view('edit', this)">SETTINGS</button>
+        <button class="tab" onclick="view('about', this)" style="margin-left:auto; border-color:transparent;">ABOUT</button>
     </div>
 
     <!-- DASHBOARD -->
@@ -310,11 +315,27 @@ HTML_BODY = """
         </div>
     </div>
 
+    <!-- ABOUT -->
+    <div id="about" class="page">
+        <div class="card" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+            <h1 style="color:var(--prim); font-family:'Orbitron'; margin-bottom:10px;">NEXUS CONTROLLER</h1>
+            <div style="color:var(--text); font-size:1.2rem; margin-bottom:5px;">{{ version }}</div>
+            <div style="color:#94a3b8; margin-bottom:20px;">Build: {{ build_date }}</div>
+            
+            <div style="border-top:1px solid #334155; padding-top:20px; width:100%; max-width:400px;">
+                <div style="color:#94a3b8; font-size:0.9rem; margin-bottom:5px;">DEVELOPER</div>
+                <div style="font-size:1.1rem; font-weight:bold; margin-bottom:15px;">{{ developer }}</div>
+                
+                <div style="color:#64748b; font-size:0.8rem;">{{ copyright }}</div>
+            </div>
+        </div>
+    </div>
+
     <!-- INSTALLER MODAL -->
     <div class="overlay" id="installModal" style="display:none;">
         <div class="box" style="width:500px; text-align:left;">
             <h3 style="margin-top:0; color:var(--prim);">Universal Installer</h3>
-            <p>Run this command on any machine to install Nexus Controller from GitHub.</p>
+            <p>Run this command on any clean machine (Ubuntu, Debian, Pi) to install Nexus Controller instantly.</p>
             <div class="install-cmd" id="installCmd">Loading...</div>
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
@@ -564,7 +585,14 @@ def tracker():
 @app.route('/')
 def home():
     # Pass the calculated installer URL to the template
-    return render_template_string(HTML_HEADER + HTML_BODY, logged_in=session.get('logged_in'), version=VERSION, installer_url=GITHUB_INSTALLER_URL)
+    return render_template_string(HTML_HEADER + HTML_BODY, 
+        logged_in=session.get('logged_in'), 
+        version=VERSION, 
+        installer_url=GITHUB_INSTALLER_URL,
+        build_date=BUILD_DATE,
+        developer=DEVELOPER,
+        copyright=COPYRIGHT
+    )
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -610,6 +638,8 @@ def weblogs():
             try: return jsonify(subprocess.check_output(f"tail -n 20 {f}", shell=True).decode().strip().split('\n')[::-1])
             except: pass
     return jsonify(["No logs found"])
+
+# Removed unused read/write routes to clean up code as requested
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
@@ -685,6 +715,25 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
         with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'status': 'err', 'error': str(e)})
+
+@app.route('/installer.sh')
+def get_installer():
+    try:
+        with open(__file__, 'r') as f: current_code = f.read()
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        bash_script = f"""#!/bin/bash
+if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
+if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
+DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
+[Unit]\nDescription=Nexus Controller\nAfter=network.target
+[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
+[Install]\nWantedBy=multi-user.target\nSVC_EOF
+systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
+IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
+"""
+        return Response(bash_script, mimetype='text/plain')
+    except Exception as e: return str(e), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=True)
