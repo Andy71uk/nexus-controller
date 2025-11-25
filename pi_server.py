@@ -16,12 +16,12 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.0 (GitHub Edition)"
+VERSION = "4.1 (Auto-Pilot)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-github-secure-key-v4-0"
+app.secret_key = "nexus-autopilot-secure-key-v4-1"
 
-# [IMPORTANT] Paste your GitHub "Raw" link here to enable One-Click Updates:
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/pi_server.py"
+# [IMPORTANT] Paste your GitHub "Raw" link here:
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
 
 # --- Global State ---
 CLIENTS = {}
@@ -117,7 +117,7 @@ HTML_HEADER = """
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | v4.0</title>
+<title>NEXUS | v4.1</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -177,6 +177,13 @@ HTML_HEADER = """
     .fill-green { background-color: var(--green); box-shadow: 0 0 5px var(--green); }
     .fill-warn { background-color: var(--warn); box-shadow: 0 0 5px var(--warn); }
     .fill-red { background-color: var(--red); box-shadow: 0 0 5px var(--red); }
+
+    /* Auto-Update Banner */
+    #update-banner { position: fixed; bottom: 20px; right: 20px; width: 300px; background: #1e293b; border: 1px solid var(--prim); border-radius: 8px; padding: 15px; box-shadow: 0 0 20px rgba(0,0,0,0.5); z-index: 200; display: none; flex-direction: column; gap: 10px; animation: slideUp 0.5s ease; }
+    @keyframes slideUp { from { transform: translateY(100px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .upd-title { font-weight: bold; color: var(--prim); font-size: 1.1rem; }
+    .upd-timer { font-size: 2rem; font-weight: bold; text-align: center; color: var(--text); margin: 10px 0; }
+    .upd-actions { display: flex; gap: 10px; }
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
@@ -298,6 +305,17 @@ HTML_BODY = """
         </div>
     </div>
 
+    <!-- AUTO-UPDATE BANNER -->
+    <div id="update-banner">
+        <div class="upd-title">🚀 UPDATE DETECTED</div>
+        <div style="font-size:0.9rem; color:#94a3b8;">New version: <span id="new-ver">...</span></div>
+        <div class="upd-timer" id="upd-timer">60</div>
+        <div class="upd-actions">
+            <button class="btn" style="background:#334155;" onclick="postponeUpdate()">POSTPONE</button>
+            <button class="btn" onclick="pullGithub()">UPDATE NOW</button>
+        </div>
+    </div>
+
     <script>
         function view(id, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -326,7 +344,6 @@ HTML_BODY = """
         }
 
         function pullGithub() {
-            if(!confirm("This will OVERWRITE the system with the latest code from GitHub. Continue?")) return;
             fetch('/code/pull_github', {method:'POST'}).then(r=>r.json()).then(d=>{
                 if(d.status === 'ok') {
                     alert("Update successful! Restarting...");
@@ -413,21 +430,62 @@ HTML_BODY = """
             else el.classList.add('fill-green');
         }
 
+        // --- AUTO UPDATE LOGIC ---
+        let updateTimer = null;
+        let countdownVal = 60;
+        let updatePostponed = false;
+
+        function checkForUpdates() {
+            if(updatePostponed) return;
+            fetch('/update/check').then(r=>r.json()).then(d=>{
+                if(d.update) showUpdateBanner(d.version);
+            });
+        }
+
+        function showUpdateBanner(ver) {
+            const b = document.getElementById('update-banner');
+            if(b.style.display === 'flex') return; // Already showing
+            b.style.display = 'flex';
+            document.getElementById('new-ver').innerText = ver;
+            
+            countdownVal = 60;
+            document.getElementById('upd-timer').innerText = countdownVal;
+            
+            if(updateTimer) clearInterval(updateTimer);
+            updateTimer = setInterval(() => {
+                countdownVal--;
+                document.getElementById('upd-timer').innerText = countdownVal;
+                if(countdownVal <= 0) {
+                    clearInterval(updateTimer);
+                    pullGithub(); // Perform update
+                }
+            }, 1000);
+        }
+
+        function postponeUpdate() {
+            if(updateTimer) clearInterval(updateTimer);
+            document.getElementById('update-banner').style.display = 'none';
+            updatePostponed = true;
+            // Reset postponement after 10 minutes
+            setTimeout(() => { updatePostponed = false; }, 600000); 
+        }
+
+        // Check for updates every 5 minutes
+        setInterval(checkForUpdates, 300000);
+        // Check once on load
+        setTimeout(checkForUpdates, 5000);
+
         setInterval(()=>{
             if(!document.getElementById('dash').classList.contains('active')) return;
             fetch('/status').then(r=>r.json()).then(d=>{
                 document.getElementById('up').innerText="UP: "+d.uptime;
-                
-                // CPU Logic (Switch Label based on what we are measuring)
                 const isTemp = d.temp > 0;
                 document.getElementById('lbl-cpu').innerText = isTemp ? "CPU TEMP" : "CPU LOAD";
                 const cpuVal = isTemp ? d.temp : d.load;
                 document.getElementById('t-cpu').innerText = cpuVal + (isTemp ? "°C" : "%");
-                setBar('b-cpu', isTemp ? (cpuVal/85)*100 : cpuVal); // 85C max for temp, 100% for load
-
+                setBar('b-cpu', isTemp ? (cpuVal/85)*100 : cpuVal);
                 document.getElementById('t-mem').innerText = d.mem+'%';
                 setBar('b-mem', d.mem);
-
                 document.getElementById('t-dsk').innerText = d.disk+'%';
                 setBar('b-dsk', d.disk);
             });
@@ -441,7 +499,6 @@ HTML_BODY = """
 # --- Routes ---
 @app.before_request
 def check_auth():
-    # Allow installer script without login
     if request.endpoint in ['static', 'login', 'get_installer']: return
     if not session.get('logged_in'):
         if request.endpoint == 'home': return
@@ -509,112 +566,66 @@ def write():
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
-    if "YOUR_USERNAME" in GITHUB_RAW_URL:
-        return jsonify({'status': 'error', 'error': 'Please configure GITHUB_RAW_URL in the code first!'})
     try:
         with urllib.request.urlopen(GITHUB_RAW_URL) as response:
             new_code = response.read().decode('utf-8')
-        
         if "from flask import" not in new_code:
-             return jsonify({'status': 'error', 'error': 'Invalid file content downloaded.'})
-
-        with open(__file__, 'w') as f:
-            f.write(new_code)
-            
+             return jsonify({'status': 'error', 'error': 'Invalid file content.'})
+        with open(__file__, 'w') as f: f.write(new_code)
         def restart(): time.sleep(1); subprocess.run("sudo systemctl restart pi_server", shell=True)
         threading.Thread(target=restart).start()
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)})
 
-# --- RESCUE TOOL GENERATOR (Base64 Safe) ---
+@app.route('/update/check')
+def check_update():
+    try:
+        with urllib.request.urlopen(GITHUB_RAW_URL) as response:
+            remote_code = response.read().decode('utf-8')
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', remote_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver != VERSION:
+                return jsonify({'update': True, 'version': remote_ver})
+        return jsonify({'update': False})
+    except:
+        return jsonify({'update': False})
+
+@app.route('/code/raw')
+def get_raw_code():
+    try: with open(__file__, 'r') as f: return Response(f.read(), mimetype='text/plain')
+    except Exception as e: return str(e), 500
+
 @app.route('/rescue/generate', methods=['POST'])
 def gen_rescue():
     try:
-        # Read self as binary to avoid encoding issues
-        with open(__file__, 'rb') as f:
-            raw_bytes = f.read()
-            b64_code = base64.b64encode(raw_bytes).decode('utf-8')
-            
-        rescue_script = f"""
-import os, sys, re, subprocess, base64
-
-MAIN_FILE = "pi_server.py"
-
-def cls(): os.system('cls' if os.name=='nt' else 'clear')
-
-def reset_password():
-    if not os.path.exists(MAIN_FILE): print("File not found!"); return
-    with open(MAIN_FILE, 'r') as f: content = f.read()
-    new_content = re.sub(r'PASSWORD = ".*?"', 'PASSWORD = "nexus"', content)
-    with open(MAIN_FILE, 'w') as f: f.write(new_content)
-    print("\\n[+] Password reset to 'nexus'. Restarting service...")
-    subprocess.run("sudo systemctl restart pi_server", shell=True)
-
-def factory_reset():
-    print("Writing clean v3.9 code (Base64 decoded)...")
-    b64_payload = "{b64_code}"
-    with open(MAIN_FILE, 'wb') as f:
-        f.write(base64.b64decode(b64_payload))
-    print("[+] Code restored. Restarting...")
-    subprocess.run("sudo systemctl restart pi_server", shell=True)
-
-def view_logs():
-    os.system("tail -n 20 nexus_error.log")
-
-while True:
-    cls()
-    print("=== NEXUS RESCUE KIT ===")
-    print("1. Reset Password to 'nexus'")
-    print("2. Factory Reset (Fix Crashes)")
-    print("3. View Crash Logs")
-    print("4. Exit")
-    c = input("Choice: ")
-    if c=='1': reset_password()
-    elif c=='2': factory_reset()
-    elif c=='3': view_logs()
-    elif c=='4': break
-    input("\\nPress Enter...")
-"""
-        with open("nexus_rescue.py", "w") as f:
-            f.write(rescue_script)
+        with open(__file__, 'rb') as f: raw_bytes = f.read(); b64_code = base64.b64encode(raw_bytes).decode('utf-8')
+        rescue_script = f"""import os,sys,re,subprocess,base64; MAIN_FILE="pi_server.py"
+def r(): open(MAIN_FILE,'w').write(re.sub(r'PASSWORD = ".*?"','PASSWORD = "nexus"',open(MAIN_FILE).read())); subprocess.run("sudo systemctl restart pi_server",shell=True)
+def f(): open(MAIN_FILE,'wb').write(base64.b64decode("{b64_code}")); subprocess.run("sudo systemctl restart pi_server",shell=True)
+c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else None"""
+        with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'status': 'err', 'error': str(e)})
 
-# --- UNIVERSAL INSTALLER GENERATOR ---
 @app.route('/installer.sh')
 def get_installer():
     try:
-        with open(__file__, 'r') as f:
-            current_code = f.read()
-        
+        with open(__file__, 'r') as f: current_code = f.read()
         bash_script = f"""#!/bin/bash
-if [ "$EUID" -ne 0 ]; then echo "Run as root (sudo)"; exit 1; fi
+if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
-DIR=$(pwd)
-cat << 'PY_EOF' > "$DIR/pi_server.py"
-{current_code}
-PY_EOF
+DIR=$(pwd); cat << 'PY_EOF' > "$DIR/pi_server.py"\n{current_code}\nPY_EOF
 cat << SVC_EOF > "/etc/systemd/system/pi_server.service"
-[Unit]
-Description=Nexus Controller
-After=network.target
-[Service]
-User=${{SUDO_USER:-$USER}}
-WorkingDirectory=$DIR
-ExecStart=/usr/bin/python3 $DIR/pi_server.py
-Restart=always
-Environment=PYTHONUNBUFFERED=1
-[Install]
-WantedBy=multi-user.target
-SVC_EOF
+[Unit]\nDescription=Nexus Controller\nAfter=network.target
+[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/pi_server.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
+[Install]\nWantedBy=multi-user.target\nSVC_EOF
 systemctl daemon-reload && systemctl enable pi_server && systemctl restart pi_server
-IP=$(hostname -I | awk '{{print $1}}')
-echo "SUCCESS! Nexus running at http://$IP:5000"
+IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
 """
         return Response(bash_script, mimetype='text/plain')
-    except Exception as e:
-        return str(e), 500
+    except Exception as e: return str(e), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=True)
