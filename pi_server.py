@@ -16,9 +16,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.1.3 (Safe Update)"
+VERSION = "4.1.4 (Cache Buster)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autopilot-secure-key-v4-1-3"
+app.secret_key = "nexus-autopilot-secure-key-v4-1-4"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
@@ -117,7 +117,7 @@ HTML_HEADER = """
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | v4.1.3</title>
+<title>NEXUS | v4.1.4</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -572,7 +572,9 @@ def write():
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
     try:
-        with urllib.request.urlopen(GITHUB_RAW_URL) as response:
+        # CACHE BUSTER: Add timestamp to URL to force fresh download
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
             new_code = response.read().decode('utf-8')
         
         # 1. Basic Content Check
@@ -600,7 +602,9 @@ def pull_github():
 @app.route('/update/check')
 def check_update():
     try:
-        with urllib.request.urlopen(GITHUB_RAW_URL) as response:
+        # CACHE BUSTER here too
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
             remote_code = response.read().decode('utf-8')
         match = re.search(r'VERSION\s*=\s*"(.*?)"', remote_code)
         if match:
