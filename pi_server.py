@@ -16,9 +16,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.2.1 (Settings Update)" # <--- UPDATED VERSION NUMBER
+VERSION = "4.3 (GitHub Only)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autopilot-secure-key-v4-2-1"
+app.secret_key = "nexus-github-only-secure-key-v4-3"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
@@ -156,8 +156,6 @@ HTML_HEADER = """
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
     th { color: #94a3b8; font-size: 0.9rem; }
     
-    textarea { flex: 1; background: #0f172a; color: #a5b4fc; border: 1px solid #334155; padding: 10px; font-family: monospace; resize: none; }
-    
     /* Health Check Styles */
     .health-grid { display: grid; gap: 10px; }
     .health-item { display: flex; align-items: center; justify-content: space-between; padding: 15px; background: #0f172a; border-radius: 5px; border-left: 4px solid #555; }
@@ -218,7 +216,7 @@ HTML_BODY = """
         <button class="tab" onclick="view('conn', this)">USERS</button>
         <button class="tab" onclick="view('logs', this)">WEB LOGS</button>
         <button class="tab" onclick="view('health', this)">SYSTEM HEALTH</button>
-        <button class="tab" onclick="view('edit', this)">SETTINGS</button>
+        <button class="tab" onclick="view('settings', this)">SETTINGS</button>
     </div>
 
     <!-- DASHBOARD -->
@@ -279,15 +277,18 @@ HTML_BODY = """
         </div>
     </div>
 
-    <!-- EDITOR / SETTINGS -->
-    <div id="edit" class="page">
-        <div class="card" style="flex:1; display:flex; flex-direction:column;">
-            <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <button class="btn" onclick="pullGithub()" style="background:#6366f1; color:#fff;">☁️ UPDATE FROM GITHUB</button>
+    <!-- SETTINGS -->
+    <div id="settings" class="page">
+        <div class="card" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+            <h2 style="color:var(--prim);">System Management</h2>
+            <p style="color:#94a3b8; max-width:400px; margin-bottom:30px;">
+                Updates are managed via GitHub. Push changes to your repository, then click the update button below.
+            </p>
+            <div style="display:flex; flex-direction:column; gap:15px; width:100%; max-width:300px;">
+                <button class="btn" onclick="pullGithub()" style="background:#6366f1; color:#fff;">☁️ FORCE UPDATE FROM GITHUB</button>
+                <button class="btn" onclick="openInstaller()" style="background:#4ade80; color:#000;">🔌 GENERATE INSTALLER COMMAND</button>
                 <button class="btn" onclick="generateRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
             </div>
-            <textarea id="code" spellcheck="false"></textarea>
-            <button class="btn" onclick="save()" style="margin-top:10px;">SAVE & RESTART</button>
         </div>
     </div>
 
@@ -321,7 +322,6 @@ HTML_BODY = """
             document.getElementById(id).classList.add('active');
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
-            if(id==='edit') loadCode();
             if(id==='conn') getClients();
             if(id==='logs') getLogs();
         }
@@ -334,13 +334,6 @@ HTML_BODY = """
             });
         }
         function doCmd() { const i=document.getElementById('cin'); if(i.value){ run(i.value); i.value=''; } }
-
-        function loadCode() { fetch('/code/read').then(r=>r.json()).then(d=>document.getElementById('code').value=d.code); }
-        function save() {
-            if(!confirm("Overwrite & Restart?")) return;
-            fetch('/code/write', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({code:document.getElementById('code').value})})
-            .then(()=>{ alert("Saved. Restarting..."); location.reload(); });
-        }
 
         function pullGithub() {
             fetch('/code/pull_github', {method:'POST'}).then(r=>r.json()).then(d=>{
@@ -558,15 +551,7 @@ def weblogs():
             except: pass
     return jsonify(["No logs found"])
 
-@app.route('/code/read')
-def read(): return jsonify({'code': open(__file__).read()})
-
-@app.route('/code/write', methods=['POST'])
-def write():
-    with open(__file__, 'w') as f: f.write(request.get_json()['code'])
-    def restart(): time.sleep(1); subprocess.run("sudo systemctl restart pi_server", shell=True)
-    threading.Thread(target=restart).start()
-    return jsonify({'status': 'ok'})
+# Removed unused read/write routes to clean up code as requested
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
