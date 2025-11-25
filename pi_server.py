@@ -16,9 +16,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.1.2 (Syntax Fixed)"
+VERSION = "4.1.3 (Safe Update)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autopilot-secure-key-v4-1-2"
+app.secret_key = "nexus-autopilot-secure-key-v4-1-3"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
@@ -117,7 +117,7 @@ HTML_HEADER = """
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | v4.1.2</title>
+<title>NEXUS | v4.1.3</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -574,10 +574,24 @@ def pull_github():
     try:
         with urllib.request.urlopen(GITHUB_RAW_URL) as response:
             new_code = response.read().decode('utf-8')
+        
+        # 1. Basic Content Check
         if "from flask import" not in new_code:
              return jsonify({'status': 'error', 'error': 'Invalid file content.'})
-        with open(__file__, 'w') as f: f.write(new_code)
-        def restart(): time.sleep(1); subprocess.run("sudo systemctl restart pi_server", shell=True)
+
+        # 2. Syntax Check (Prevent crashing the server with bad code)
+        try:
+            compile(new_code, '<string>', 'exec')
+        except SyntaxError as e:
+            return jsonify({'status': 'error', 'error': f'Syntax Error in GitHub code: Line {e.lineno}'})
+
+        with open(__file__, 'w') as f:
+            f.write(new_code)
+            
+        def restart():
+            time.sleep(1)
+            subprocess.run("sudo systemctl restart pi_server", shell=True)
+            
         threading.Thread(target=restart).start()
         return jsonify({'status': 'ok'})
     except Exception as e:
