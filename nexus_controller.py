@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.2.1 (Rescue Fix)"
+VERSION = "5.2 (Recovery Link)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-rescue-fix-secure-key-v5-2-1"
+app.secret_key = "nexus-recovery-link-secure-key-v5-2"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -36,6 +36,7 @@ COPYRIGHT = "© 2025 Nexus Systems. All rights reserved."
 # --- GITHUB CONFIGURATION ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
 GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh")
+GITHUB_RECOVERY_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "recovery.sh")
 
 # --- Global State ---
 CLIENTS = {}
@@ -49,30 +50,6 @@ def get_os_from_ua(ua):
     if 'macintosh' in ua: return 'macOS'
     if 'linux' in ua: return 'Linux'
     return 'Unknown'
-
-def get_file_path():
-    return os.path.abspath(__file__)
-
-def safe_write_file(path, content):
-    """Writes file, using sudo fallback if permission denied."""
-    try:
-        with open(path, 'w') as f:
-            f.write(content)
-        return True
-    except PermissionError:
-        try:
-            # Fallback: Write to temp and sudo mv
-            tmp_path = path + ".tmp"
-            with open(tmp_path, 'w') as f:
-                f.write(content)
-            subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
-            # Try to fix ownership to current user to avoid future sudo needs
-            user = os.getenv('USER')
-            if user: subprocess.run(f"sudo chown {user} {path}", shell=True)
-            return True
-        except Exception as e:
-            logging.error(f"Safe write failed: {e}")
-            return False
 
 def get_host_info():
     info = {}
@@ -169,8 +146,7 @@ def get_mc_process_owner():
     except: pass
     return None, None
 
-# --- UI COMPONENTS ---
-
+# --- HTML Frontend ---
 STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -424,7 +400,7 @@ BODY = """
             <div style="display:flex; flex-direction:column; gap:15px; width:100%; max-width:300px;">
                 <button class="btn" onclick="pullGithub()" style="background:#6366f1; color:#fff;">☁️ FORCE UPDATE FROM GITHUB</button>
                 <button class="btn" onclick="openInstaller()" style="background:#4ade80; color:#000;">🔌 GENERATE INSTALLER COMMAND</button>
-                <button class="btn" onclick="generateRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
+                <button class="btn" onclick="openRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
             </div>
         </div>
     </div>
@@ -454,6 +430,19 @@ BODY = """
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
                 <button class="btn" onclick="copyInstall()">COPY</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- RECOVERY MODAL -->
+    <div class="overlay" id="recoveryModal" style="display:none;">
+        <div class="box" style="width:500px; text-align:left;">
+            <h3 style="margin-top:0; color:var(--warn);">⚠️ EMERGENCY RECOVERY</h3>
+            <p>If your server crashes or you get locked out, SSH in and run this command to install Safe Mode.</p>
+            <div class="install-cmd" id="recoveryCmd">curl -sL {{ installer_url.replace("install.sh", "recovery.sh") }} | sudo bash</div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('recoveryModal').style.display='none'">CLOSE</button>
+                <button class="btn" onclick="copyRecovery()">COPY</button>
             </div>
         </div>
     </div>
@@ -634,12 +623,18 @@ SCRIPT = """
                 prompt("Copy this:", txt);
             }
         }
+        
+        function openRecovery() {
+            document.getElementById('recoveryModal').style.display = 'flex';
+        }
 
-        function generateRescue() {
-            if(!confirm("Generate rescue tool?")) return;
-            fetch('/rescue/generate', {method:'POST'}).then(r=>r.json()).then(d=>{
-                alert(d.status === 'ok' ? "SUCCESS: 'nexus_rescue.py' created on server." : "Error: " + d.error);
-            });
+        function copyRecovery() {
+            const txt = document.getElementById('recoveryCmd').innerText;
+            if(navigator.clipboard) {
+                navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
+            } else {
+                prompt("Copy this:", txt);
+            }
         }
 
         function setBar(id, val) {
@@ -912,8 +907,6 @@ def mc_status():
             # Check screens for the specific user
             if target_user != "root":
                 # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
-                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
-                # We use run to capture output regardless of return code.
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
@@ -985,16 +978,16 @@ def pull_github():
             if remote_ver == VERSION:
                 return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
 
-        # 4. Safe Write (Handles Permissions)
-        if safe_write_file(get_file_path(), new_code):
-            def restart():
-                time.sleep(1)
-                subprocess.run("sudo systemctl restart nexus_controller", shell=True)
-            threading.Thread(target=restart).start()
-            return jsonify({'status': 'ok'})
-        else:
-            return jsonify({'status': 'error', 'error': 'Permission denied writing file.'})
-
+        with open(__file__, 'w') as f:
+            f.write(new_code)
+            
+        def restart():
+            time.sleep(1)
+            # Renamed to match the file name change
+            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            
+        threading.Thread(target=restart).start()
+        return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)})
 
@@ -1039,13 +1032,11 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now fixes permissions immediately after creation
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
 DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
-# Fix permissions for the SUDO_USER
-chown ${{SUDO_USER:-$USER}} "$DIR/nexus_controller.py"
 cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
 [Unit]\nDescription=Nexus Controller\nAfter=network.target
 [Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
