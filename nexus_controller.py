@@ -18,14 +18,13 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.7 (Structure Fix)"
+VERSION = "4.9.8 (Critical Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-structure-fix-secure-key-v4-9-7"
+app.secret_key = "nexus-critical-fix-secure-key-v4-9-8"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
-# [IMPORTANT] Set this to the user running Minecraft (e.g., "pi", "minecraft", or "root")
 MC_USER = "root"
 
 # --- METADATA ---
@@ -33,7 +32,7 @@ DEVELOPER = "Andy71uk"
 BUILD_DATE = "November 25, 2025"
 COPYRIGHT = "© 2025 Nexus Systems. All rights reserved."
 
-# [IMPORTANT] GitHub Configuration
+# --- GITHUB CONFIGURATION ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
 GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh")
 
@@ -74,7 +73,6 @@ def get_host_info():
     return info
 
 def get_system_stats():
-    # CPU Temp
     temp = 0
     try:
         r = subprocess.check_output("vcgencmd measure_temp", shell=True, stderr=subprocess.DEVNULL)
@@ -86,7 +84,6 @@ def get_system_stats():
                 if val > 0: temp = round(val, 1)
         except: pass
 
-    # CPU Load
     load = 0
     try:
         l1, l5, l15 = os.getloadavg()
@@ -94,10 +91,7 @@ def get_system_stats():
         load = round((l1 / cores) * 100, 1)
     except: pass
 
-    # Mem / Disk
-    mem = 0
-    disk = 0
-    uptime = "Unknown"
+    mem = 0; disk = 0; uptime = "Unknown"
     try:
         m = subprocess.check_output("free -m", shell=True).decode().splitlines()[1].split()
         mem = round((int(m[2])/int(m[1]))*100, 1)
@@ -140,7 +134,7 @@ def perform_health_check():
 
 # --- UI COMPONENTS ---
 
-STYLE = """
+STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -210,6 +204,17 @@ STYLE = """
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
+"""
+
+HTML_HEADER = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+{STYLE_CSS}
+</head>
 """
 
 BODY = """
@@ -678,7 +683,7 @@ SCRIPT = """
 </html>
 """
 
-FULL_HTML = f"{HTML_HEADER}{STYLE}{BODY}{SCRIPT}"
+FULL_HTML = f"{HTML_HEADER}{STYLE_CSS}{BODY}{SCRIPT}"
 
 # --- Routes ---
 @app.before_request
