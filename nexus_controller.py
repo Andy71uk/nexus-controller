@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.2.1 (Recovery Link)"
+VERSION = "5.2.2 (Recovery Link)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-recovery-link-secure-key-v5-2"
 
