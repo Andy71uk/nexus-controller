@@ -16,9 +16,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.2 (GitHub Verified)" # <--- UPDATED VERSION NUMBER
+VERSION = "4.2.1 (Settings Update)" # <--- UPDATED VERSION NUMBER
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autopilot-secure-key-v4-2"
+app.secret_key = "nexus-autopilot-secure-key-v4-2-1"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
@@ -117,7 +117,7 @@ HTML_HEADER = """
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | v4.2</title>
+<title>NEXUS | Control</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -206,7 +206,7 @@ HTML_BODY = """
     {% else %}
     
     <header>
-        <div class="brand">NEXUS <span style="color:var(--prim)">CONTROLLER</span></div>
+        <div class="brand">NEXUS <span style="color:var(--prim)">CONTROLLER</span> <span style="font-size:0.6em; opacity:0.5; vertical-align:middle; margin-left:5px;">{{ version }}</span></div>
         <div>
             <span id="up" style="font-family:monospace; margin-right:10px;">UP: --</span>
             <a href="/logout" style="color:var(--red); text-decoration:none; border:1px solid var(--red); padding:2px 8px; font-size:0.8rem;">LOGOUT</a>
@@ -218,7 +218,7 @@ HTML_BODY = """
         <button class="tab" onclick="view('conn', this)">USERS</button>
         <button class="tab" onclick="view('logs', this)">WEB LOGS</button>
         <button class="tab" onclick="view('health', this)">SYSTEM HEALTH</button>
-        <button class="tab" onclick="view('edit', this)">EDITOR</button>
+        <button class="tab" onclick="view('edit', this)">SETTINGS</button>
     </div>
 
     <!-- DASHBOARD -->
@@ -279,11 +279,10 @@ HTML_BODY = """
         </div>
     </div>
 
-    <!-- EDITOR -->
+    <!-- EDITOR / SETTINGS -->
     <div id="edit" class="page">
         <div class="card" style="flex:1; display:flex; flex-direction:column;">
             <div style="display:flex; gap:10px; margin-bottom:10px;">
-                <button class="btn" onclick="openInstaller()" style="background:#4ade80; color:#000;">🔌 INSTALLER</button>
                 <button class="btn" onclick="pullGithub()" style="background:#6366f1; color:#fff;">☁️ UPDATE FROM GITHUB</button>
                 <button class="btn" onclick="generateRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
             </div>
@@ -515,14 +514,14 @@ def tracker():
     CLIENTS[request.remote_addr] = {'seen': time.time(), 'ua': request.user_agent.string}
 
 @app.route('/')
-def home(): return render_template_string(HTML_HEADER + HTML_BODY, logged_in=session.get('logged_in'))
+def home(): return render_template_string(HTML_HEADER + HTML_BODY, logged_in=session.get('logged_in'), version=VERSION)
 
 @app.route('/login', methods=['POST'])
 def login():
     if request.form.get('password') == PASSWORD:
         session['logged_in'] = True
         return redirect('/')
-    return render_template_string(HTML_HEADER + HTML_BODY, logged_in=False, error="INVALID PASSWORD")
+    return render_template_string(HTML_HEADER + HTML_BODY, logged_in=False, error="INVALID PASSWORD", version=VERSION)
 
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
