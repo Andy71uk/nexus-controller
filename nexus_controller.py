@@ -18,15 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.2.2 (Recovery Link)"
+VERSION = "5.3 (Auto-Detect Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-recovery-link-secure-key-v5-2"
+app.secret_key = "nexus-autofix-secure-key-v5-3"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
-# set to "auto" to let Nexus find the user running java
-MC_USER = "auto" 
+# Set to "auto" to guess, or the specific user (e.g. "minecraft")
+MC_USER = "minecraft" 
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -36,7 +36,6 @@ COPYRIGHT = "© 2025 Nexus Systems. All rights reserved."
 # --- GITHUB CONFIGURATION ---
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
 GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh")
-GITHUB_RECOVERY_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "recovery.sh")
 
 # --- Global State ---
 CLIENTS = {}
@@ -138,9 +137,11 @@ def perform_health_check():
 def get_mc_process_owner():
     try:
         # Find PID of server.jar
-        pid = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
-        if pid:
-            # Get owner of that PID
+        # Use grep -v grep to ensure we don't match ourselves
+        pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        if pids:
+            # Take the first PID found
+            pid = pids[0]
             owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
             return owner, pid
     except: pass
@@ -400,7 +401,7 @@ BODY = """
             <div style="display:flex; flex-direction:column; gap:15px; width:100%; max-width:300px;">
                 <button class="btn" onclick="pullGithub()" style="background:#6366f1; color:#fff;">☁️ FORCE UPDATE FROM GITHUB</button>
                 <button class="btn" onclick="openInstaller()" style="background:#4ade80; color:#000;">🔌 GENERATE INSTALLER COMMAND</button>
-                <button class="btn" onclick="openRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
+                <button class="btn" onclick="generateRescue()" style="background:#eab308; color:#000;">🚑 GENERATE RESCUE TOOL</button>
             </div>
         </div>
     </div>
@@ -430,19 +431,6 @@ BODY = """
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
                 <button class="btn" onclick="copyInstall()">COPY</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- RECOVERY MODAL -->
-    <div class="overlay" id="recoveryModal" style="display:none;">
-        <div class="box" style="width:500px; text-align:left;">
-            <h3 style="margin-top:0; color:var(--warn);">⚠️ EMERGENCY RECOVERY</h3>
-            <p>If your server crashes or you get locked out, SSH in and run this command to install Safe Mode.</p>
-            <div class="install-cmd" id="recoveryCmd">curl -sL {{ installer_url.replace("install.sh", "recovery.sh") }} | sudo bash</div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
-                <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('recoveryModal').style.display='none'">CLOSE</button>
-                <button class="btn" onclick="copyRecovery()">COPY</button>
             </div>
         </div>
     </div>
@@ -623,18 +611,12 @@ SCRIPT = """
                 prompt("Copy this:", txt);
             }
         }
-        
-        function openRecovery() {
-            document.getElementById('recoveryModal').style.display = 'flex';
-        }
 
-        function copyRecovery() {
-            const txt = document.getElementById('recoveryCmd').innerText;
-            if(navigator.clipboard) {
-                navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
-            } else {
-                prompt("Copy this:", txt);
-            }
+        function generateRescue() {
+            if(!confirm("Generate rescue tool?")) return;
+            fetch('/rescue/generate', {method:'POST'}).then(r=>r.json()).then(d=>{
+                alert(d.status === 'ok' ? "SUCCESS: 'nexus_rescue.py' created on server." : "Error: " + d.error);
+            });
         }
 
         function setBar(id, val) {
