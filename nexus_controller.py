@@ -25,7 +25,7 @@ app.secret_key = "nexus-critical-fix-secure-key-v4-9-8"
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
-MC_USER = "root"
+MC_USER = "minecraft"
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
