@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.1.1 (Critical Fix)"
+VERSION = "5.1.2 (Template Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-critical-fix-secure-key-v5-1-1"
+app.secret_key = "nexus-template-fix-secure-key-v5-1-2"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -146,13 +146,7 @@ def get_mc_process_owner():
     return None, None
 
 # --- HTML Frontend ---
-HTML_HEADER = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -223,6 +217,17 @@ HTML_HEADER = """
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
+"""
+
+HTML_HEADER = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+{STYLE_CSS}
+</head>
 """
 
 HTML_BODY = """
@@ -691,7 +696,7 @@ SCRIPT = """
 </html>
 """
 
-FULL_HTML = f"{HTML_HEADER}{HTML_BODY}"
+FULL_HTML = f"{HTML_HEADER}{HTML_BODY}{SCRIPT}"
 
 # --- Routes ---
 @app.before_request
