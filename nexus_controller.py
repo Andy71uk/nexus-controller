@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.4.1 (Smart Update)"
+VERSION = "4.5 (GitHub Installer)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-insight-secure-key-v4-4-1"
+app.secret_key = "nexus-insight-secure-key-v4-5"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
@@ -729,12 +729,30 @@ def get_installer():
         # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
-if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
-DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask curl; fi
+DIR=$(pwd); 
+echo "Downloading Nexus Controller from GitHub..."
+curl -sL {GITHUB_RAW_URL} -o "$DIR/nexus_controller.py"
+
+# Verify download
+if [ ! -s "$DIR/nexus_controller.py" ]; then
+    echo "Error: Download failed."
+    exit 1
+fi
+
 cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
-[Unit]\nDescription=Nexus Controller\nAfter=network.target
-[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
-[Install]\nWantedBy=multi-user.target\nSVC_EOF
+[Unit]
+Description=Nexus Controller
+After=network.target
+[Service]
+User=${{SUDO_USER:-$USER}}
+WorkingDirectory=$DIR
+ExecStart=/usr/bin/python3 $DIR/nexus_controller.py
+Restart=always
+Environment=PYTHONUNBUFFERED=1
+[Install]
+WantedBy=multi-user.target
+SVC_EOF
 systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
 IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
 """
