@@ -7,6 +7,8 @@ import logging
 import re
 import base64
 import urllib.request
+import platform
+import socket
 from flask import Flask, render_template_string, request, jsonify, Response, session, redirect, url_for
 
 # --- CRASH LOGGING ---
@@ -16,12 +18,11 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.3.3 (GitHub Only)"
+VERSION = "4.4 (System Insight)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-github-only-secure-key-v4-3"
+app.secret_key = "nexus-insight-secure-key-v4-4"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
-# Updated to point to the new filename
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
 
 # --- Global State ---
@@ -36,6 +37,48 @@ def get_os_from_ua(ua):
     if 'macintosh' in ua: return 'macOS'
     if 'linux' in ua: return 'Linux'
     return 'Unknown'
+
+def get_host_info():
+    info = {}
+    try: info['Hostname'] = socket.gethostname()
+    except: pass
+    
+    try: 
+        # Get pretty OS name
+        if os.path.exists("/etc/os-release"):
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if line.startswith("PRETTY_NAME="):
+                        info['OS Distribution'] = line.split("=")[1].strip().strip('"')
+                        break
+        else:
+            info['OS Distribution'] = platform.system()
+    except: info['OS Distribution'] = "Unknown Linux"
+
+    try: info['Kernel Version'] = platform.release()
+    except: pass
+    
+    try: info['Architecture'] = platform.machine()
+    except: pass
+    
+    try:
+        # Linux CPU Model
+        cpu = subprocess.check_output("grep -m1 'model name' /proc/cpuinfo | cut -d: -f2", shell=True).decode().strip()
+        if not cpu: # Fallback for some ARM chips that don't list model name nicely
+             cpu = subprocess.check_output("grep -m1 'Hardware' /proc/cpuinfo | cut -d: -f2", shell=True).decode().strip()
+        info['CPU Model'] = cpu if cpu else "Generic Processor"
+    except: info['CPU Model'] = platform.processor()
+
+    try: info['CPU Cores'] = str(os.cpu_count())
+    except: pass
+    
+    try: info['Python Version'] = sys.version.split()[0]
+    except: pass
+    
+    try: info['Local IP'] = subprocess.check_output("hostname -I", shell=True).decode().strip().split()[0]
+    except: pass
+
+    return info
 
 def get_system_stats():
     # CPU Temp
@@ -168,6 +211,10 @@ HTML_HEADER = """
     .badge.PASS { background: rgba(34, 197, 94, 0.2); color: var(--green); border: 1px solid var(--green); }
     .badge.FAIL { background: rgba(239, 68, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
     .badge.WARN { background: rgba(234, 179, 8, 0.2); color: var(--warn); border: 1px solid var(--warn); }
+    
+    .info-box { background: #0f172a; padding:10px; border-radius:4px; border:1px solid #334155; }
+    .info-label { font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:3px; }
+    .info-val { font-family:monospace; font-size:0.95rem; color:#e2e8f0; word-break:break-all; }
 
     /* Installer Modal */
     .install-cmd { background: #000; color: #4ade80; padding: 15px; border-radius: 5px; font-family: monospace; margin: 15px 0; word-break: break-all; border: 1px solid #333; }
@@ -268,8 +315,13 @@ HTML_BODY = """
     <!-- HEALTH CHECK -->
     <div id="health" class="page">
         <div class="card" style="flex:1; overflow:auto;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
-                <h3 style="margin:0;">Diagnostic Report</h3>
+            <h3 style="margin-top:0; border-bottom:1px solid #334155; padding-bottom:10px; color:var(--prim); font-size:1rem;">HOST INFORMATION</h3>
+            <div id="host-info-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:20px;">
+                <div style="color:#64748b;">Loading details...</div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-top:1px solid #334155; padding-top:20px;">
+                <h3 style="margin:0; color:var(--prim); font-size:1rem;">DIAGNOSTIC REPORT</h3>
                 <button class="btn" style="width:auto;" onclick="runHealthCheck()">RUN DIAGNOSTICS</button>
             </div>
             <div id="health-results" class="health-grid">
@@ -335,6 +387,7 @@ HTML_BODY = """
             el.classList.add('active');
             if(id==='conn') getClients();
             if(id==='logs') getLogs();
+            if(id==='health') loadSysInfo();
         }
 
         function run(c) {
@@ -388,6 +441,16 @@ HTML_BODY = """
                     } catch(e){}
                 });
                 document.getElementById('llist').innerHTML=h;
+            });
+        }
+
+        function loadSysInfo() {
+            fetch('/sysinfo').then(r=>r.json()).then(d=>{
+                let h='';
+                for(const [k, v] of Object.entries(d)) {
+                    h += `<div class="info-box"><div class="info-label">${k}</div><div class="info-val">${v}</div></div>`;
+                }
+                document.getElementById('host-info-grid').innerHTML = h;
             });
         }
 
@@ -545,6 +608,9 @@ def logout(): session.clear(); return redirect('/')
 
 @app.route('/status')
 def status(): return jsonify(get_system_stats())
+
+@app.route('/sysinfo')
+def sysinfo(): return jsonify(get_host_info())
 
 @app.route('/execute', methods=['POST'])
 def execute():
