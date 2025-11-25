@@ -18,14 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9.8.1 (Critical Fix)"
+VERSION = "5.1 (Auto-Detect)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-critical-fix-secure-key-v4-9-8"
+app.secret_key = "nexus-autodetect-secure-key-v5-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
-MC_USER = "minecraft"
+# set to "auto" to let Nexus find the user running java
+MC_USER = "auto" 
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -132,13 +133,31 @@ def perform_health_check():
 
     return report
 
-# --- UI COMPONENTS ---
+# --- HELPER: Find Minecraft User ---
+def get_mc_process_owner():
+    try:
+        # Find PID of server.jar
+        pid = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
+        if pid:
+            # Get owner of that PID
+            owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
+            return owner, pid
+    except: pass
+    return None, None
 
-STYLE_CSS = """
+# --- HTML Frontend ---
+HTML_HEADER = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     
+    /* Login */
     .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg); z-index:99; display: flex; justify-content: center; align-items: center; }
     .box { background: var(--panel); padding: 30px; border: 1px solid var(--prim); border-radius: 10px; text-align: center; width: 300px; }
     input { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; width: 100%; margin-bottom: 10px; box-sizing: border-box; text-align: center; }
@@ -206,18 +225,7 @@ STYLE_CSS = """
 </style>
 """
 
-HTML_HEADER = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
-{STYLE_CSS}
-</head>
-"""
-
-BODY = """
+HTML_BODY = """
 <body>
     {% if not logged_in %}
     <div class="overlay">
@@ -765,12 +773,19 @@ def mc_cmd():
         
         if c.startswith('/'): c = c[1:]
         
+        # Get dynamic user
+        target_user = MC_USER
+        if target_user == "auto":
+             owner, _ = get_mc_process_owner()
+             if owner: target_user = owner
+             else: target_user = "root" # Fallback
+
         # Use double quotes and Carriage Return \r for reliable screen injection
         screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
         
-        if MC_USER != "root":
+        if target_user != "root":
             # Wrap the screen command in sudo for the specific user
-            final_cmd = f"sudo -u {MC_USER} {screen_cmd}"
+            final_cmd = f"sudo -u {target_user} {screen_cmd}"
         else:
             final_cmd = screen_cmd
             
@@ -857,22 +872,25 @@ def mc_status():
             if p:
                 owner = subprocess.check_output(f"ps -o user= -p {p}", shell=True).decode().strip()
         except: pass
+        
+        # Determine target user for screen check
+        target_user = MC_USER
+        if target_user == "auto" and owner != "Unknown":
+            target_user = owner
 
         try:
             # Check screens for the specific user
-            if MC_USER != "root":
+            if target_user != "root":
                 # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
-                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
-                # We use run to capture output regardless of return code.
-                cmd = f"sudo -u {MC_USER} screen -ls"
+                cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
                 if "No Sockets found" in out:
-                     screens = f"No screens found for user '{MC_USER}'"
+                     screens = f"No screens found for user '{target_user}'"
                 elif res.returncode == 0:
                      screens = out
                 else:
-                     screens = f"Error checking screens for '{MC_USER}': {out}"
+                     screens = f"Error checking screens for '{target_user}': {out}"
             else:
                  cmd = "screen -ls"
                  res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -896,8 +914,9 @@ def mc_status():
         else: path_status = f"Invalid: {MC_PATH}"
         
         try:
-            if MC_USER != "root":
-                cmd = f"sudo -u {MC_USER} screen -ls"
+            target_user = MC_USER if MC_USER != "auto" else "root"
+            if target_user != "root":
+                cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 screens = res.stdout.decode().strip()
             else:
@@ -905,7 +924,7 @@ def mc_status():
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 screens = res.stdout.decode().strip()
             
-            if "No Sockets found" in screens: screens = f"No screens found for user '{MC_USER}'"
+            if "No Sockets found" in screens: screens = f"No screens found for user '{target_user}'"
         except: pass
         return jsonify({'running': False, 'pid': None, 'mem': 0, 'screens': screens, 'owner': owner, 'path_status': path_status})
 
