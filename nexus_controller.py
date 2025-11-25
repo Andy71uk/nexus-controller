@@ -18,14 +18,13 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.8 (Minecraft Edition)"
+VERSION = "4.9 (Smart Search)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-minecraft-secure-key-v4-8"
+app.secret_key = "nexus-smart-search-secure-key-v4-9"
 
 # --- MINECRAFT CONFIGURATION ---
-# The name of the screen session running minecraft (e.g., screen -S minecraft ...)
 MC_SCREEN_NAME = "minecraft"
-# The absolute path to your minecraft server folder (where logs/latest.log is)
+# Default guess (will be overridden by smart search if invalid)
 MC_PATH = "/home/pi/minecraft" 
 
 # --- METADATA ---
@@ -409,7 +408,7 @@ HTML_BODY = """
     <div class="overlay" id="installModal" style="display:none;">
         <div class="box" style="width:500px; text-align:left;">
             <h3 style="margin-top:0; color:var(--prim);">Universal Installer</h3>
-            <p>Run this command on any clean machine (Ubuntu, Debian, Pi) to install Nexus Controller instantly.</p>
+            <p>Run this command on any clean machine (Ubuntu, Debian, Pi) to install Nexus Controller from GitHub.</p>
             <div class="install-cmd" id="installCmd">Loading...</div>
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
@@ -762,12 +761,43 @@ def mc_cmd():
 
 @app.route('/minecraft/log')
 def mc_log():
-    log_path = os.path.join(MC_PATH, "logs/latest.log")
-    if not os.path.exists(log_path):
-        return jsonify([f"Log file not found at: {log_path}"])
+    # ATTEMPT TO FIND THE LOG FILE AUTOMATICALLY
+    log_candidates = []
+    
+    # 1. Configured Path
+    log_candidates.append(os.path.join(MC_PATH, "logs/latest.log"))
+
+    # 2. Auto-Detect via Process
+    try:
+        # Find all PIDs matching "server.jar"
+        pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        for pid in pids:
+            try:
+                # Get Current Working Directory of the process
+                cwd = subprocess.check_output(f"readlink -f /proc/{pid}/cwd", shell=True).decode().strip()
+                log_candidates.append(os.path.join(cwd, "logs/latest.log"))
+            except: pass
+    except: pass
+
+    # 3. Last Resort: Check user home folder
+    try:
+        home_logs = subprocess.check_output("find /home -name latest.log -path '*/logs/*' -print -quit", shell=True).decode().strip()
+        if home_logs: log_candidates.append(home_logs)
+    except: pass
+
+    # Use the first one that actually exists
+    final_path = None
+    for p in log_candidates:
+        if os.path.exists(p):
+            final_path = p
+            break
+            
+    if not final_path:
+        return jsonify([f"Log file not found. Checked: {log_candidates}"])
+
     try:
         # Read last 50 lines
-        output = subprocess.check_output(f"tail -n 50 {log_path}", shell=True).decode('utf-8', errors='ignore')
+        output = subprocess.check_output(f"tail -n 50 '{final_path}'", shell=True).decode('utf-8', errors='ignore')
         return jsonify(output.strip().split('\n'))
     except Exception as e:
         return jsonify([str(e)])
