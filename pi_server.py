@@ -16,12 +16,13 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.3 (GitHub Only)"
+VERSION = "4.3.1 (GitHub Only and newaddress)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-github-only-secure-key-v4-3"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
+# Updated to point to the new filename
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
 
 # --- Global State ---
 CLIENTS = {}
@@ -216,7 +217,7 @@ HTML_BODY = """
         <button class="tab" onclick="view('conn', this)">USERS</button>
         <button class="tab" onclick="view('logs', this)">WEB LOGS</button>
         <button class="tab" onclick="view('health', this)">SYSTEM HEALTH</button>
-        <button class="tab" onclick="view('settings', this)">SETTINGS</button>
+        <button class="tab" onclick="view('edit', this)">SETTINGS</button>
     </div>
 
     <!-- DASHBOARD -->
@@ -230,7 +231,7 @@ HTML_BODY = """
             <div class="cmds card">
                 <div style="color:#94a3b8; font-size:0.8rem; margin-bottom:5px;">ACTIONS</div>
                 <button class="cmd-btn" onclick="run('sudo apt-get update')">⚡ Update System</button>
-                <button class="cmd-btn" onclick="run('sudo systemctl restart pi_server')">✨ Restart App</button>
+                <button class="cmd-btn" onclick="run('sudo systemctl restart nexus_controller')">✨ Restart App</button>
                 <button class="cmd-btn" style="color:var(--red)" onclick="if(confirm('Reboot?')) run('sudo reboot')">🔄 Reboot</button>
             </div>
             <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-height:0;">
@@ -278,7 +279,7 @@ HTML_BODY = """
     </div>
 
     <!-- SETTINGS -->
-    <div id="settings" class="page">
+    <div id="edit" class="page">
         <div class="card" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
             <h2 style="color:var(--prim);">System Management</h2>
             <p style="color:#94a3b8; max-width:400px; margin-bottom:30px;">
@@ -576,7 +577,8 @@ def pull_github():
             
         def restart():
             time.sleep(1)
-            subprocess.run("sudo systemctl restart pi_server", shell=True)
+            # Renamed to match the file name change
+            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
             
         threading.Thread(target=restart).start()
         return jsonify({'status': 'ok'})
@@ -611,9 +613,10 @@ def get_raw_code():
 def gen_rescue():
     try:
         with open(__file__, 'rb') as f: raw_bytes = f.read(); b64_code = base64.b64encode(raw_bytes).decode('utf-8')
-        rescue_script = f"""import os,sys,re,subprocess,base64; MAIN_FILE="pi_server.py"
-def r(): open(MAIN_FILE,'w').write(re.sub(r'PASSWORD = ".*?"','PASSWORD = "nexus"',open(MAIN_FILE).read())); subprocess.run("sudo systemctl restart pi_server",shell=True)
-def f(): open(MAIN_FILE,'wb').write(base64.b64decode("{b64_code}")); subprocess.run("sudo systemctl restart pi_server",shell=True)
+        # UPDATED: Refers to nexus_controller.py and nexus_controller service
+        rescue_script = f"""import os,sys,re,subprocess,base64; MAIN_FILE="nexus_controller.py"
+def r(): open(MAIN_FILE,'w').write(re.sub(r'PASSWORD = ".*?"','PASSWORD = "nexus"',open(MAIN_FILE).read())); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
+def f(): open(MAIN_FILE,'wb').write(base64.b64decode("{b64_code}")); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
 c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else None"""
         with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
         return jsonify({'status': 'ok'})
@@ -623,15 +626,16 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
-DIR=$(pwd); cat << 'PY_EOF' > "$DIR/pi_server.py"\n{current_code}\nPY_EOF
-cat << SVC_EOF > "/etc/systemd/system/pi_server.service"
+DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
 [Unit]\nDescription=Nexus Controller\nAfter=network.target
-[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/pi_server.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
+[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
 [Install]\nWantedBy=multi-user.target\nSVC_EOF
-systemctl daemon-reload && systemctl enable pi_server && systemctl restart pi_server
+systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
 IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
 """
         return Response(bash_script, mimetype='text/plain')
