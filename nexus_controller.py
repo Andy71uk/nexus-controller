@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.3.2 (GitHub Only and newaddress)"
+VERSION = "4.3.3 (GitHub Only)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-github-only-secure-key-v4-3"
 
@@ -317,6 +317,16 @@ HTML_BODY = """
         </div>
     </div>
 
+    <!-- RESTART OVERLAY -->
+    <div class="overlay" id="restartModal" style="display:none; z-index:200;">
+        <div class="box">
+            <h3 style="margin-top:0; color:var(--green);">UPDATE SUCCESSFUL</h3>
+            <p>The system is restarting with the new version.</p>
+            <div style="font-size:3rem; font-weight:bold; margin:20px 0;" id="restartTimer">10</div>
+            <p style="color:#94a3b8; font-size:0.9rem;">Reloading dashboard automatically...</p>
+        </div>
+    </div>
+
     <script>
         function view(id, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -336,11 +346,24 @@ HTML_BODY = """
         }
         function doCmd() { const i=document.getElementById('cin'); if(i.value){ run(i.value); i.value=''; } }
 
+        function triggerRestart() {
+            document.getElementById('restartModal').style.display = 'flex';
+            let count = 10;
+            const timer = document.getElementById('restartTimer');
+            const interval = setInterval(() => {
+                count--;
+                timer.innerText = count;
+                if (count <= 0) {
+                    clearInterval(interval);
+                    location.reload();
+                }
+            }, 1000);
+        }
+
         function pullGithub() {
             fetch('/code/pull_github', {method:'POST'}).then(r=>r.json()).then(d=>{
                 if(d.status === 'ok') {
-                    alert("Update successful! Restarting...");
-                    location.reload();
+                    triggerRestart();
                 } else {
                     alert("Update failed: " + d.error);
                 }
