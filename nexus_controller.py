@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.1 (Auto-Detect)"
+VERSION = "5.1.1 (Critical Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autodetect-secure-key-v5-1"
+app.secret_key = "nexus-critical-fix-secure-key-v5-1-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -691,7 +691,7 @@ SCRIPT = """
 </html>
 """
 
-FULL_HTML = f"{HTML_HEADER}{STYLE_CSS}{BODY}{SCRIPT}"
+FULL_HTML = f"{HTML_HEADER}{HTML_BODY}"
 
 # --- Routes ---
 @app.before_request
@@ -882,6 +882,8 @@ def mc_status():
             # Check screens for the specific user
             if target_user != "root":
                 # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
+                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
+                # We use run to capture output regardless of return code.
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
