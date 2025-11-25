@@ -18,12 +18,14 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.5 (GitHub Installer)"
+VERSION = "4.6 (Cloud Factory)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-insight-secure-key-v4-5"
+app.secret_key = "nexus-factory-secure-key-v4-6"
 
-# [IMPORTANT] Paste your GitHub "Raw" link here:
+# [IMPORTANT] GitHub Configuration
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/nexus_controller.py"
+# We automatically derive the installer URL from the main URL
+GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh")
 
 # --- Global State ---
 CLIENTS = {}
@@ -42,46 +44,26 @@ def get_host_info():
     info = {}
     try: info['Hostname'] = socket.gethostname()
     except: pass
-    
     try: 
-        # Get pretty OS name
         if os.path.exists("/etc/os-release"):
             with open("/etc/os-release") as f:
                 for line in f:
                     if line.startswith("PRETTY_NAME="):
                         info['OS Distribution'] = line.split("=")[1].strip().strip('"')
                         break
-        else:
-            info['OS Distribution'] = platform.system()
+        else: info['OS Distribution'] = platform.system()
     except: info['OS Distribution'] = "Unknown Linux"
-
-    try: info['Kernel Version'] = platform.release()
+    try: info['Kernel'] = platform.release()
     except: pass
-    
-    try: info['Architecture'] = platform.machine()
+    try: info['Arch'] = platform.machine()
     except: pass
-    
-    try:
-        # Linux CPU Model
-        cpu = subprocess.check_output("grep -m1 'model name' /proc/cpuinfo | cut -d: -f2", shell=True).decode().strip()
-        if not cpu: # Fallback for some ARM chips that don't list model name nicely
-             cpu = subprocess.check_output("grep -m1 'Hardware' /proc/cpuinfo | cut -d: -f2", shell=True).decode().strip()
-        info['CPU Model'] = cpu if cpu else "Generic Processor"
-    except: info['CPU Model'] = platform.processor()
-
-    try: info['CPU Cores'] = str(os.cpu_count())
+    try: info['Python'] = sys.version.split()[0]
     except: pass
-    
-    try: info['Python Version'] = sys.version.split()[0]
-    except: pass
-    
     try: info['Local IP'] = subprocess.check_output("hostname -I", shell=True).decode().strip().split()[0]
     except: pass
-
     return info
 
 def get_system_stats():
-    # CPU Temp
     temp = 0
     try:
         r = subprocess.check_output("vcgencmd measure_temp", shell=True, stderr=subprocess.DEVNULL)
@@ -93,7 +75,6 @@ def get_system_stats():
                 if val > 0: temp = round(val, 1)
         except: pass
 
-    # CPU Load
     load = 0
     try:
         l1, l5, l15 = os.getloadavg()
@@ -101,10 +82,7 @@ def get_system_stats():
         load = round((l1 / cores) * 100, 1)
     except: pass
 
-    # Mem / Disk
-    mem = 0
-    disk = 0
-    uptime = "Unknown"
+    mem = 0; disk = 0; uptime = "Unknown"
     try:
         m = subprocess.check_output("free -m", shell=True).decode().splitlines()[1].split()
         mem = round((int(m[2])/int(m[1]))*100, 1)
@@ -119,38 +97,28 @@ def perform_health_check():
     report = []
     try:
         subprocess.check_call(["ping", "-c", "1", "-W", "1", "8.8.8.8"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        report.append({"name": "Internet Connectivity", "status": "PASS", "msg": "Online (Ping 8.8.8.8 OK)"})
+        report.append({"name": "Internet Connectivity", "status": "PASS", "msg": "Online"})
     except:
-        report.append({"name": "Internet Connectivity", "status": "FAIL", "msg": "Offline / Unreachable"})
+        report.append({"name": "Internet Connectivity", "status": "FAIL", "msg": "Offline"})
 
     try:
         d = int(subprocess.check_output("df -h /", shell=True).decode().splitlines()[1].split()[4].replace("%",""))
         status = "PASS" if d < 90 else "FAIL"
-        report.append({"name": "Root Filesystem", "status": status, "msg": f"{d}% Used (Threshold: 90%)"})
+        report.append({"name": "Root Filesystem", "status": status, "msg": f"{d}% Used"})
     except: pass
 
     try:
         m = subprocess.check_output("free -m", shell=True).decode().splitlines()[1].split()
         p = round((int(m[2])/int(m[1]))*100)
         status = "PASS" if p < 95 else "WARN"
-        report.append({"name": "Memory Capacity", "status": status, "msg": f"{p}% Used (Threshold: 95%)"})
-    except: pass
-
-    try:
-        stats = get_system_stats()
-        t = stats['temp']
-        if t > 0:
-            status = "PASS" if t < 80 else "FAIL"
-            report.append({"name": "Thermal Status", "status": status, "msg": f"{t}°C (Throttle Point: 80°C)"})
-        else:
-            report.append({"name": "Thermal Status", "status": "INFO", "msg": "No Sensor Detected (Virtual Machine?)"})
+        report.append({"name": "Memory Capacity", "status": status, "msg": f"{p}% Used"})
     except: pass
 
     try:
         s = subprocess.call(["systemctl", "is-active", "--quiet", "ssh"])
         status = "PASS" if s == 0 else "WARN"
-        msg = "SSH Service Running" if s == 0 else "SSH Service Inactive"
-        report.append({"name": "Remote Access (SSH)", "status": status, "msg": msg})
+        msg = "Running" if s == 0 else "Inactive"
+        report.append({"name": "SSH Service", "status": status, "msg": msg})
     except: pass
 
     return report
@@ -200,15 +168,10 @@ HTML_HEADER = """
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
     th { color: #94a3b8; font-size: 0.9rem; }
     
-    textarea { flex: 1; background: #0f172a; color: #a5b4fc; border: 1px solid #334155; padding: 10px; font-family: monospace; resize: none; }
-    
-    /* Health Check Styles */
+    /* Health & Info */
     .health-grid { display: grid; gap: 10px; }
     .health-item { display: flex; align-items: center; justify-content: space-between; padding: 15px; background: #0f172a; border-radius: 5px; border-left: 4px solid #555; }
-    .h-pass { border-left-color: var(--green); }
-    .h-fail { border-left-color: var(--red); }
-    .h-warn { border-left-color: var(--warn); }
-    .h-info { border-left-color: var(--prim); }
+    .h-pass { border-left-color: var(--green); } .h-fail { border-left-color: var(--red); } .h-warn { border-left-color: var(--warn); }
     .badge { padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; background: #333; color: white; }
     .badge.PASS { background: rgba(34, 197, 94, 0.2); color: var(--green); border: 1px solid var(--green); }
     .badge.FAIL { background: rgba(239, 68, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
@@ -351,7 +314,7 @@ HTML_BODY = """
     <div class="overlay" id="installModal" style="display:none;">
         <div class="box" style="width:500px; text-align:left;">
             <h3 style="margin-top:0; color:var(--prim);">Universal Installer</h3>
-            <p>Run this command on any clean machine (Ubuntu, Debian, Pi) to install Nexus Controller instantly.</p>
+            <p>Run this command on any machine to install Nexus Controller from GitHub.</p>
             <div class="install-cmd" id="installCmd">Loading...</div>
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
@@ -483,8 +446,9 @@ HTML_BODY = """
         }
 
         function openInstaller() {
-            const host = window.location.host;
-            document.getElementById('installCmd').innerText = `curl -sL http://${host}/installer.sh | sudo bash`;
+            // We now use the pre-configured GitHub installer link
+            const url = "{{ installer_url }}";
+            document.getElementById('installCmd').innerText = `curl -sL ${url} | sudo bash`;
             document.getElementById('installModal').style.display = 'flex';
         }
 
@@ -598,7 +562,9 @@ def tracker():
     CLIENTS[request.remote_addr] = {'seen': time.time(), 'ua': request.user_agent.string}
 
 @app.route('/')
-def home(): return render_template_string(HTML_HEADER + HTML_BODY, logged_in=session.get('logged_in'), version=VERSION)
+def home():
+    # Pass the calculated installer URL to the template
+    return render_template_string(HTML_HEADER + HTML_BODY, logged_in=session.get('logged_in'), version=VERSION, installer_url=GITHUB_INSTALLER_URL)
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -644,8 +610,6 @@ def weblogs():
             try: return jsonify(subprocess.check_output(f"tail -n 20 {f}", shell=True).decode().strip().split('\n')[::-1])
             except: pass
     return jsonify(["No logs found"])
-
-# Removed unused read/write routes to clean up code as requested
 
 @app.route('/code/pull_github', methods=['POST'])
 def pull_github():
@@ -721,43 +685,6 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
         with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
         return jsonify({'status': 'ok'})
     except Exception as e: return jsonify({'status': 'err', 'error': str(e)})
-
-@app.route('/installer.sh')
-def get_installer():
-    try:
-        with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
-        bash_script = f"""#!/bin/bash
-if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
-if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask curl; fi
-DIR=$(pwd); 
-echo "Downloading Nexus Controller from GitHub..."
-curl -sL {GITHUB_RAW_URL} -o "$DIR/nexus_controller.py"
-
-# Verify download
-if [ ! -s "$DIR/nexus_controller.py" ]; then
-    echo "Error: Download failed."
-    exit 1
-fi
-
-cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
-[Unit]
-Description=Nexus Controller
-After=network.target
-[Service]
-User=${{SUDO_USER:-$USER}}
-WorkingDirectory=$DIR
-ExecStart=/usr/bin/python3 $DIR/nexus_controller.py
-Restart=always
-Environment=PYTHONUNBUFFERED=1
-[Install]
-WantedBy=multi-user.target
-SVC_EOF
-systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
-IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
-"""
-        return Response(bash_script, mimetype='text/plain')
-    except Exception as e: return str(e), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=PORT, debug=True)
