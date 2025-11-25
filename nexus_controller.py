@@ -18,9 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.7 (About Tab)"
+VERSION = "4.8 (Minecraft Edition)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-factory-secure-key-v4-7"
+app.secret_key = "nexus-minecraft-secure-key-v4-8"
+
+# --- MINECRAFT CONFIGURATION ---
+# The name of the screen session running minecraft (e.g., screen -S minecraft ...)
+MC_SCREEN_NAME = "minecraft"
+# The absolute path to your minecraft server folder (where logs/latest.log is)
+MC_PATH = "/home/pi/minecraft" 
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -68,6 +74,7 @@ def get_host_info():
     return info
 
 def get_system_stats():
+    # CPU Temp
     temp = 0
     try:
         r = subprocess.check_output("vcgencmd measure_temp", shell=True, stderr=subprocess.DEVNULL)
@@ -79,6 +86,7 @@ def get_system_stats():
                 if val > 0: temp = round(val, 1)
         except: pass
 
+    # CPU Load
     load = 0
     try:
         l1, l5, l15 = os.getloadavg()
@@ -86,7 +94,10 @@ def get_system_stats():
         load = round((l1 / cores) * 100, 1)
     except: pass
 
-    mem = 0; disk = 0; uptime = "Unknown"
+    # Mem / Disk
+    mem = 0
+    disk = 0
+    uptime = "Unknown"
     try:
         m = subprocess.check_output("free -m", shell=True).decode().splitlines()[1].split()
         mem = round((int(m[2])/int(m[1]))*100, 1)
@@ -185,6 +196,14 @@ HTML_HEADER = """
     .info-label { font-size:0.7rem; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:3px; }
     .info-val { font-family:monospace; font-size:0.95rem; color:#e2e8f0; word-break:break-all; }
 
+    /* Minecraft Styles */
+    .mc-group { margin-bottom: 15px; }
+    .mc-label { color: #94a3b8; font-size:0.8rem; margin-bottom:5px; text-transform:uppercase; }
+    .mc-btn-row { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
+    .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; }
+    .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
+    .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
+
     /* Installer Modal */
     .install-cmd { background: #000; color: #4ade80; padding: 15px; border-radius: 5px; font-family: monospace; margin: 15px 0; word-break: break-all; border: 1px solid #333; }
     
@@ -230,6 +249,7 @@ HTML_BODY = """
 
     <div class="tabs">
         <button class="tab active" onclick="view('dash', this)">DASHBOARD</button>
+        <button class="tab" onclick="view('minecraft', this)">MINECRAFT</button>
         <button class="tab" onclick="view('conn', this)">USERS</button>
         <button class="tab" onclick="view('logs', this)">WEB LOGS</button>
         <button class="tab" onclick="view('health', this)">SYSTEM HEALTH</button>
@@ -256,6 +276,60 @@ HTML_BODY = """
                 <div style="display:flex; gap:5px;">
                     <input id="cin" type="text" placeholder="Command..." onkeypress="if(event.key=='Enter')doCmd()">
                     <button class="btn" style="width:auto" onclick="doCmd()">RUN</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MINECRAFT -->
+    <div id="minecraft" class="page">
+        <div class="card" style="flex:1; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h3 style="margin:0; color:var(--prim);">Minecraft Console</h3>
+                <div id="mc-status" style="font-weight:bold;">Checking...</div>
+            </div>
+            
+            <div class="grid-split" style="height: 100%;">
+                <div style="overflow-y:auto; padding-right:10px;">
+                    
+                    <div class="mc-group">
+                        <div class="mc-label">VITAL COMMANDS</div>
+                        <div class="mc-btn-row">
+                            <button class="btn-mc" onclick="mcCmd('save-all')">Save All</button>
+                            <button class="btn-mc" onclick="mcCmd('whitelist on')">Whitelist On</button>
+                            <button class="btn-mc" onclick="mcCmd('whitelist off')">Whitelist Off</button>
+                            <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">STOP SERVER</button>
+                        </div>
+                    </div>
+
+                    <div class="mc-group">
+                        <div class="mc-label">GEYSER / FLOODGATE</div>
+                        <div class="mc-btn-row">
+                            <button class="btn-mc" onclick="mcCmd('geyser reload')">Reload Geyser</button>
+                            <button class="btn-mc" onclick="mcCmd('geyser offhand')">Offhand</button>
+                        </div>
+                    </div>
+
+                    <div class="mc-group">
+                        <div class="mc-label">GAMEPLAY</div>
+                        <div class="mc-btn-row">
+                            <button class="btn-mc" onclick="mcCmd('time set day')">Day</button>
+                            <button class="btn-mc" onclick="mcCmd('time set night')">Night</button>
+                            <button class="btn-mc" onclick="mcCmd('weather clear')">Clear Weather</button>
+                            <button class="btn-mc" onclick="mcCmd('weather thunder')">Thunder</button>
+                            <button class="btn-mc" onclick="mcCmd('kill @e[type=zombie]')">Kill Zombies</button>
+                        </div>
+                    </div>
+
+                </div>
+                
+                <div style="display:flex; flex-direction:column; gap:10px; flex:1;">
+                    <div class="mc-term" id="mc-log"><div>Loading logs...</div></div>
+                    <div style="display:flex; gap:5px;">
+                        <input id="mcin" type="text" placeholder="Console Command (e.g. op Steve)..." onkeypress="if(event.key=='Enter')doMcCmd()">
+                        <button class="btn" style="width:auto" onclick="doMcCmd()">SEND</button>
+                        <button class="btn" style="width:auto; background:#334155;" onclick="loadMcLog()">REFRESH LOG</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -374,6 +448,7 @@ HTML_BODY = """
             if(id==='conn') getClients();
             if(id==='logs') getLogs();
             if(id==='health') loadSysInfo();
+            if(id==='minecraft') loadMcLog();
         }
 
         function run(c) {
@@ -465,6 +540,35 @@ HTML_BODY = """
                 document.getElementById('health-results').innerHTML = html;
             });
         }
+
+        // --- MINECRAFT FUNCTIONS ---
+        function mcCmd(c) {
+            const t = document.getElementById('mc-log');
+            t.innerHTML = `<div style="color:#eab308">>> ${c}</div>` + t.innerHTML;
+            fetch('/minecraft/cmd', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cmd:c})})
+            .then(r=>r.json()).then(d=>{
+                if(d.error) alert(d.error);
+            });
+        }
+        function doMcCmd() { const i=document.getElementById('mcin'); if(i.value){ mcCmd(i.value); i.value=''; } }
+
+        function loadMcLog() {
+            fetch('/minecraft/log').then(r=>r.json()).then(d=>{
+                document.getElementById('mc-log').innerText = d.join('\\n');
+            });
+        }
+        // Check Minecraft Status periodically
+        setInterval(()=>{
+            if(!document.getElementById('minecraft').classList.contains('active')) return;
+            fetch('/minecraft/status').then(r=>r.json()).then(d=>{
+                const s = document.getElementById('mc-status');
+                if(d.running) {
+                    s.innerHTML = `<span style="color:#22c55e">ONLINE</span> (RAM: ${d.mem} MB)`;
+                } else {
+                    s.innerHTML = `<span style="color:#ef4444">OFFLINE</span>`;
+                }
+            });
+        }, 5000);
 
         function openInstaller() {
             // We now use the pre-configured GitHub installer link
@@ -638,6 +742,55 @@ def weblogs():
             try: return jsonify(subprocess.check_output(f"tail -n 20 {f}", shell=True).decode().strip().split('\n')[::-1])
             except: pass
     return jsonify(["No logs found"])
+
+# --- MINECRAFT ROUTES ---
+@app.route('/minecraft/cmd', methods=['POST'])
+def mc_cmd():
+    try:
+        c = request.get_json().get('cmd')
+        if not c: return jsonify({'error': 'Empty command'})
+        
+        # Sanitize command (strip leading slash if present)
+        if c.startswith('/'): c = c[1:]
+        
+        # Send to screen session
+        cmd = f"screen -S {MC_SCREEN_NAME} -p 0 -X stuff '{c}\\r'"
+        subprocess.run(cmd, shell=True)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/minecraft/log')
+def mc_log():
+    log_path = os.path.join(MC_PATH, "logs/latest.log")
+    if not os.path.exists(log_path):
+        return jsonify([f"Log file not found at: {log_path}"])
+    try:
+        # Read last 50 lines
+        output = subprocess.check_output(f"tail -n 50 {log_path}", shell=True).decode('utf-8', errors='ignore')
+        return jsonify(output.strip().split('\n'))
+    except Exception as e:
+        return jsonify([str(e)])
+
+@app.route('/minecraft/status')
+def mc_status():
+    try:
+        # Check if java process for server.jar is running
+        # We grep for server.jar (common name) or just java if fuzzy
+        p = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
+        
+        # Get RAM usage if running
+        mem = 0
+        if p:
+            try:
+                # Get RSS memory in KB, convert to MB
+                m = subprocess.check_output(f"ps -o rss= -p {p}", shell=True).decode().strip()
+                mem = round(int(m) / 1024, 1)
+            except: pass
+            
+        return jsonify({'running': True, 'pid': p, 'mem': mem})
+    except:
+        return jsonify({'running': False, 'pid': None, 'mem': 0})
 
 # Removed unused read/write routes to clean up code as requested
 
