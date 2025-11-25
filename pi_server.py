@@ -16,9 +16,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.1 (Auto-Pilot)"
+VERSION = "4.1.2 (Syntax Fixed)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autopilot-secure-key-v4-1"
+app.secret_key = "nexus-autopilot-secure-key-v4-1-2"
 
 # [IMPORTANT] Paste your GitHub "Raw" link here:
 GITHUB_RAW_URL = "https://raw.githubusercontent.com/Andy71uk/nexus-controller/main/pi_server.py"
@@ -117,7 +117,7 @@ HTML_HEADER = """
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | v4.1</title>
+<title>NEXUS | v4.1.2</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -479,13 +479,17 @@ HTML_BODY = """
             if(!document.getElementById('dash').classList.contains('active')) return;
             fetch('/status').then(r=>r.json()).then(d=>{
                 document.getElementById('up').innerText="UP: "+d.uptime;
+                
+                // CPU Logic (Switch Label based on what we are measuring)
                 const isTemp = d.temp > 0;
                 document.getElementById('lbl-cpu').innerText = isTemp ? "CPU TEMP" : "CPU LOAD";
                 const cpuVal = isTemp ? d.temp : d.load;
                 document.getElementById('t-cpu').innerText = cpuVal + (isTemp ? "°C" : "%");
-                setBar('b-cpu', isTemp ? (cpuVal/85)*100 : cpuVal);
+                setBar('b-cpu', isTemp ? (cpuVal/85)*100 : cpuVal); // 85C max for temp, 100% for load
+
                 document.getElementById('t-mem').innerText = d.mem+'%';
                 setBar('b-mem', d.mem);
+
                 document.getElementById('t-dsk').innerText = d.disk+'%';
                 setBar('b-dsk', d.disk);
             });
@@ -499,6 +503,7 @@ HTML_BODY = """
 # --- Routes ---
 @app.before_request
 def check_auth():
+    # Allow installer script without login
     if request.endpoint in ['static', 'login', 'get_installer']: return
     if not session.get('logged_in'):
         if request.endpoint == 'home': return
@@ -594,8 +599,11 @@ def check_update():
 
 @app.route('/code/raw')
 def get_raw_code():
-    try: with open(__file__, 'r') as f: return Response(f.read(), mimetype='text/plain')
-    except Exception as e: return str(e), 500
+    try:
+        with open(__file__, 'r') as f:
+            return Response(f.read(), mimetype='text/plain')
+    except Exception as e:
+        return str(e), 500
 
 @app.route('/rescue/generate', methods=['POST'])
 def gen_rescue():
