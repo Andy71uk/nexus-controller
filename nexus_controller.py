@@ -18,13 +18,12 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "4.9 (Smart Search)"
+VERSION = "4.9.1 (Validation Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-smart-search-secure-key-v4-9"
+app.secret_key = "nexus-safe-secure-key-v4-9-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
-# Default guess (will be overridden by smart search if invalid)
 MC_PATH = "/opt/minecraft-java-server"
 
 # --- METADATA ---
@@ -138,13 +137,8 @@ def perform_health_check():
     return report
 
 # --- HTML Frontend ---
-HTML_HEADER = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+# Split into smaller chunks to be safer for copy/pasting
+STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -220,6 +214,16 @@ HTML_HEADER = """
 
     @media(max-width:700px) { .grid-split { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
 </style>
+"""
+
+HTML_HEADER = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+{STYLE_CSS}
 </head>
 """
 
@@ -669,3 +673,265 @@ HTML_BODY = """
     {% endif %}
 </body>
 </html>
+"""
+
+# --- Routes ---
+@app.before_request
+def check_auth():
+    # Allow installer script without login
+    if request.endpoint in ['static', 'login', 'get_installer']: return
+    if not session.get('logged_in'):
+        if request.endpoint == 'home': return
+        return jsonify({'error': 'Login Required'}), 401
+
+@app.before_request
+def tracker():
+    if request.endpoint == 'static': return
+    CLIENTS[request.remote_addr] = {'seen': time.time(), 'ua': request.user_agent.string}
+
+@app.route('/')
+def home():
+    # Pass the calculated installer URL to the template
+    return render_template_string(HTML_HEADER + HTML_BODY, 
+        logged_in=session.get('logged_in'), 
+        version=VERSION, 
+        installer_url=GITHUB_INSTALLER_URL,
+        build_date=BUILD_DATE,
+        developer=DEVELOPER,
+        copyright=COPYRIGHT
+    )
+
+@app.route('/login', methods=['POST'])
+def login():
+    if request.form.get('password') == PASSWORD:
+        session['logged_in'] = True
+        return redirect('/')
+    return render_template_string(HTML_HEADER + HTML_BODY, logged_in=False, error="INVALID PASSWORD", version=VERSION)
+
+@app.route('/logout')
+def logout(): session.clear(); return redirect('/')
+
+@app.route('/status')
+def status(): return jsonify(get_system_stats())
+
+@app.route('/sysinfo')
+def sysinfo(): return jsonify(get_host_info())
+
+@app.route('/execute', methods=['POST'])
+def execute():
+    try:
+        c = request.get_json().get('cmd')
+        o = subprocess.check_output(c, shell=True, stderr=subprocess.STDOUT).decode()
+        return jsonify({'output': o})
+    except Exception as e: return jsonify({'error': str(e)})
+
+@app.route('/clients')
+def clients():
+    now = time.time()
+    cl = []
+    for ip, d in list(CLIENTS.items()):
+        if now - d['seen'] > 60: del CLIENTS[ip]; continue
+        cl.append({'ip': ip, 'os': get_os_from_ua(d['ua']), 'status': 'Online'})
+    return jsonify(cl)
+
+@app.route('/health')
+def health(): return jsonify(perform_health_check())
+
+@app.route('/logs/web')
+def weblogs():
+    logs = ['/var/log/apache2/access.log', '/var/log/nginx/access.log']
+    for f in logs:
+        if os.path.exists(f):
+            try: return jsonify(subprocess.check_output(f"tail -n 20 {f}", shell=True).decode().strip().split('\n')[::-1])
+            except: pass
+    return jsonify(["No logs found"])
+
+# --- MINECRAFT ROUTES ---
+@app.route('/minecraft/cmd', methods=['POST'])
+def mc_cmd():
+    try:
+        c = request.get_json().get('cmd')
+        if not c: return jsonify({'error': 'Empty command'})
+        
+        # Sanitize command (strip leading slash if present)
+        if c.startswith('/'): c = c[1:]
+        
+        # Send to screen session
+        cmd = f"screen -S {MC_SCREEN_NAME} -p 0 -X stuff '{c}\\r'"
+        subprocess.run(cmd, shell=True)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
+
+@app.route('/minecraft/log')
+def mc_log():
+    # ATTEMPT TO FIND THE LOG FILE AUTOMATICALLY
+    log_candidates = []
+    
+    # 1. Configured Path
+    log_candidates.append(os.path.join(MC_PATH, "logs/latest.log"))
+
+    # 2. Auto-Detect via Process
+    try:
+        # Find all PIDs matching "server.jar"
+        pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        for pid in pids:
+            try:
+                # Get Current Working Directory of the process
+                cwd = subprocess.check_output(f"readlink -f /proc/{pid}/cwd", shell=True).decode().strip()
+                log_candidates.append(os.path.join(cwd, "logs/latest.log"))
+            except: pass
+    except: pass
+
+    # 3. Last Resort: Check user home folder
+    try:
+        home_logs = subprocess.check_output("find /home -name latest.log -path '*/logs/*' -print -quit", shell=True).decode().strip()
+        if home_logs: log_candidates.append(home_logs)
+    except: pass
+    
+    # 4. Explicit SFTP Path (user hint)
+    log_candidates.append("/opt/minecraft-java-server/logs/latest.log")
+
+    # Use the first one that actually exists
+    final_path = None
+    for p in log_candidates:
+        if os.path.exists(p):
+            final_path = p
+            break
+            
+    if not final_path:
+        return jsonify([f"Log file not found. Checked: {log_candidates}"])
+
+    try:
+        # Read last 50 lines
+        output = subprocess.check_output(f"tail -n 50 '{final_path}'", shell=True).decode('utf-8', errors='ignore')
+        return jsonify(output.strip().split('\n'))
+    except Exception as e:
+        return jsonify([str(e)])
+
+@app.route('/minecraft/status')
+def mc_status():
+    try:
+        # Check if java process for server.jar is running
+        # We grep for server.jar (common name) or just java if fuzzy
+        p = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
+        
+        # Get RAM usage if running
+        mem = 0
+        if p:
+            try:
+                # Get RSS memory in KB, convert to MB
+                m = subprocess.check_output(f"ps -o rss= -p {p}", shell=True).decode().strip()
+                mem = round(int(m) / 1024, 1)
+            except: pass
+            
+        return jsonify({'running': True, 'pid': p, 'mem': mem})
+    except:
+        return jsonify({'running': False, 'pid': None, 'mem': 0})
+
+@app.route('/code/pull_github', methods=['POST'])
+def pull_github():
+    try:
+        # CACHE BUSTER: Add timestamp to URL to force fresh download
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
+            new_code = response.read().decode('utf-8')
+        
+        # 1. Basic Content Check
+        if "from flask import" not in new_code:
+             return jsonify({'status': 'error', 'error': 'Invalid file content.'})
+
+        # 2. Syntax Check (Prevent crashing the server with bad code)
+        try:
+            compile(new_code, '<string>', 'exec')
+        except SyntaxError as e:
+            return jsonify({'status': 'error', 'error': f'Syntax Error in GitHub code: Line {e.lineno}'})
+
+        # 3. Version Check (NEW)
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', new_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver == VERSION:
+                return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
+
+        with open(__file__, 'w') as f:
+            f.write(new_code)
+            
+        def restart():
+            time.sleep(1)
+            # Renamed to match the file name change
+            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            
+        threading.Thread(target=restart).start()
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)})
+
+@app.route('/update/check')
+def check_update():
+    try:
+        # CACHE BUSTER here too
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
+            remote_code = response.read().decode('utf-8')
+        match = re.search(r'VERSION\s*=\s*"(.*?)"', remote_code)
+        if match:
+            remote_ver = match.group(1)
+            if remote_ver != VERSION:
+                return jsonify({'update': True, 'version': remote_ver})
+        return jsonify({'update': False})
+    except:
+        return jsonify({'update': False})
+
+@app.route('/debug/github')
+def debug_github():
+    try:
+        url = f"{GITHUB_RAW_URL}?t={int(time.time())}"
+        with urllib.request.urlopen(url) as response:
+            code = response.read().decode('utf-8')
+        return f"<pre>{code[:500]}... \n\n ...{code[-500:]}</pre>"
+    except Exception as e:
+        return str(e)
+
+@app.route('/code/raw')
+def get_raw_code():
+    try:
+        with open(__file__, 'r') as f:
+            return Response(f.read(), mimetype='text/plain')
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/rescue/generate', methods=['POST'])
+def gen_rescue():
+    try:
+        with open(__file__, 'rb') as f: raw_bytes = f.read(); b64_code = base64.b64encode(raw_bytes).decode('utf-8')
+        # UPDATED: Refers to nexus_controller.py and nexus_controller service
+        rescue_script = f"""import os,sys,re,subprocess,base64; MAIN_FILE="nexus_controller.py"
+def r(): open(MAIN_FILE,'w').write(re.sub(r'PASSWORD = ".*?"','PASSWORD = "nexus"',open(MAIN_FILE).read())); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
+def f(): open(MAIN_FILE,'wb').write(base64.b64decode("{b64_code}")); subprocess.run("sudo systemctl restart nexus_controller",shell=True)
+c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else None"""
+        with open("nexus_rescue.py", "w") as f: f.write(rescue_script)
+        return jsonify({'status': 'ok'})
+    except Exception as e: return jsonify({'status': 'err', 'error': str(e)})
+
+@app.route('/installer.sh')
+def get_installer():
+    try:
+        with open(__file__, 'r') as f: current_code = f.read()
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        bash_script = f"""#!/bin/bash
+if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
+if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
+DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
+[Unit]\nDescription=Nexus Controller\nAfter=network.target
+[Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
+[Install]\nWantedBy=multi-user.target\nSVC_EOF
+systemctl daemon-reload && systemctl enable nexus_controller && systemctl restart nexus_controller
+IP=$(hostname -I | awk '{{print $1}}'); echo "SUCCESS! http://$IP:5000"
+"""
+        return Response(bash_script, mimetype='text/plain')
+    except Exception as e: return str(e), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=PORT, debug=True)
