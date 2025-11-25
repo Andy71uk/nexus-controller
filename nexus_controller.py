@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.3 (Auto-Detect Fix)"
+VERSION = "5.4 (Process Discovery)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-autofix-secure-key-v5-3"
+app.secret_key = "nexus-process-discovery-secure-key-v5-4"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -136,16 +136,25 @@ def perform_health_check():
 # --- HELPER: Find Minecraft User ---
 def get_mc_process_owner():
     try:
-        # Find PID of server.jar
-        # Use grep -v grep to ensure we don't match ourselves
-        pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        # 1. Try specific jar name first
+        pids = []
+        try:
+            pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        except: pass
+        
+        # 2. Fallback to generic java
+        if not pids:
+            try:
+                pids = subprocess.check_output("pgrep java", shell=True).decode().strip().split()
+            except: pass
+
         if pids:
             # Take the first PID found
             pid = pids[0]
             owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
             return owner, pid
     except: pass
-    return None, None
+    return "Unknown", None
 
 # --- HTML Frontend ---
 STYLE_CSS = """
