@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.7.1 (MC Layout)"
+VERSION = "5.7.2 (Update Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-mclayout-secure-key-v5-7-1"
+app.secret_key = "nexus-update-fix-secure-key-v5-7-2"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -41,6 +41,30 @@ GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh
 CLIENTS = {}
 
 # --- Helper Functions ---
+def get_file_path():
+    return os.path.abspath(__file__)
+
+def safe_write_file(path, content):
+    """Writes file, using sudo fallback if permission denied."""
+    try:
+        with open(path, 'w') as f:
+            f.write(content)
+        return True
+    except PermissionError:
+        try:
+            # Fallback: Write to temp and sudo mv
+            tmp_path = path + ".tmp"
+            with open(tmp_path, 'w') as f:
+                f.write(content)
+            subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
+            # Try to fix ownership to current user to avoid future sudo needs
+            user = os.getenv('USER')
+            if user: subprocess.run(f"sudo chown {user} {path}", shell=True)
+            return True
+        except Exception as e:
+            logging.error(f"Safe write failed: {e}")
+            return False
+
 def get_os_from_ua(ua):
     ua = ua.lower()
     if 'windows' in ua: return 'Windows'
@@ -348,7 +372,7 @@ BODY = """
                     <div class="mc-group">
                         <div class="mc-label">VITAL COMMANDS</div>
                         <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('save-all')">💾 SAVE</button>
+                            <button class="btn-mc" onclick="mcCmd('save-all')">💾 SAVE ALL</button>
                             <button class="btn-mc" onclick="mcCmd('whitelist on')">🔒 WL ON</button>
                             <button class="btn-mc" onclick="mcCmd('whitelist off')">🔓 WL OFF</button>
                             <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">🛑 STOP</button>
@@ -459,7 +483,7 @@ BODY = """
             </div>
 
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-top:1px solid #334155; padding-top:20px;">
-                <h3 style="margin:0; color:var(--prim); font-size:1rem;">DIAGNOSTIC REPORT</h3>
+                <h3 style="margin:0; color:var(--prim); font-size:1rem;">DIAGNOSTICS REPORT</h3>
                 <button class="btn" style="width:auto;" onclick="runHealthCheck()">RUN DIAGNOSTICS</button>
             </div>
             <div id="health-results" class="health-grid">
@@ -926,6 +950,7 @@ def mc_cmd():
         target_user = resolve_mc_user()
         
         # Use double quotes and Carriage Return \r for reliable screen injection
+        # We construct the command differently for root vs sudo user
         screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
         
         if target_user != "root":
