@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.5 (Player Command Center)"
+VERSION = "5.6.3 (Player Command Center)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-player-cmd-secure-key-v5-5"
 
