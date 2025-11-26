@@ -18,15 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.2 (Minecraft UI)"
+VERSION = "5.5 (Player Command Center)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-mc-ui-secure-key-v5-4"
+app.secret_key = "nexus-player-cmd-secure-key-v5-5"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
-# "auto" attempts to find the user running server.jar
-MC_USER = "auto"
+# Set to "auto" to guess, or the specific user (e.g. "minecraft")
+MC_USER = "auto" 
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -136,20 +136,44 @@ def perform_health_check():
 # --- HELPER: Find Minecraft User ---
 def get_mc_process_owner():
     try:
-        # Find PID of server.jar
-        pid = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
-        # Handle multiple PIDs (newlines)
-        if '\n' in pid: pid = pid.split('\n')[0]
+        pids = []
+        try:
+            pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
+        except: pass
         
-        if pid:
-            # Get owner of that PID
+        if not pids:
+            try:
+                pids = subprocess.check_output("pgrep java", shell=True).decode().strip().split()
+            except: pass
+
+        if pids:
+            pid = pids[0]
             owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
             return owner, pid
     except: pass
-    return None, None
+    return "Unknown", None
 
-# --- UI COMPONENTS ---
+def resolve_mc_user():
+    if MC_USER != "auto":
+        return MC_USER
+    
+    owner, _ = get_mc_process_owner()
+    if owner and owner != "Unknown":
+        return owner
+    return "root"
 
+def send_screen_cmd(cmd):
+    user = resolve_mc_user()
+    screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{cmd}\r"'
+    
+    if user != "root":
+        final_cmd = f"sudo -u {user} {screen_cmd}"
+    else:
+        final_cmd = screen_cmd
+        
+    subprocess.run(final_cmd, shell=True)
+
+# --- HTML Frontend ---
 STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
@@ -206,6 +230,10 @@ STYLE_CSS = """
     .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; }
     .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
     .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
+    
+    .player-row { display: flex; gap: 5px; margin-top: 5px; }
+    .player-row select { flex: 1; background: #2d2d2d; border: 1px solid #444; color: white; }
+    .player-row button { width: auto; background: #eab308; color: black; padding: 8px 12px; }
 
     .install-cmd { background: #000; color: #4ade80; padding: 15px; border-radius: 5px; font-family: monospace; margin: 15px 0; word-break: break-all; border: 1px solid #333; }
     
@@ -321,34 +349,49 @@ BODY = """
                         </div>
                     </div>
                     
-                    <!-- GAMEPLAY SECTION MOVED HERE & REDESIGNED -->
                     <div class="mc-group">
                         <div class="mc-label">GAMEPLAY ACTIONS</div>
-                        <div style="display:flex; gap:5px; margin-top:5px;">
-                             <select id="gameplaySelect" style="flex:1; background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px; text-align:left;">
-                                <optgroup label="Time">
-                                    <option value="time set day">☀️ Time: Day</option>
-                                    <option value="time set night">🌙 Time: Night</option>
-                                    <option value="time set 0">🌅 Time: Sunrise</option>
-                                    <option value="time set 12000">🌇 Time: Sunset</option>
-                                </optgroup>
-                                <optgroup label="Weather">
-                                    <option value="weather clear">🌤️ Weather: Clear</option>
-                                    <option value="weather rain">🌧️ Weather: Rain</option>
-                                    <option value="weather thunder">⛈️ Weather: Thunder</option>
-                                </optgroup>
-                                <optgroup label="Entities">
-                                     <option value="kill @e[type=zombie]">🧟 Kill Zombies</option>
-                                     <option value="kill @e[type=skeleton]">💀 Kill Skeletons</option>
-                                     <option value="kill @e[type=creeper]">🧨 Kill Creepers</option>
-                                     <option value="kill @e[type=spider]">🕷️ Kill Spiders</option>
-                                </optgroup>
-                                <optgroup label="Geyser">
-                                    <option value="geyser reload">🔄 Reload Geyser</option>
-                                    <option value="geyser offhand">✋ Offhand</option>
-                                </optgroup>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                            <select id="timeSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
+                                <option value="" disabled selected>Select Time...</option>
+                                <option value="time set 0">🌅 Sunrise (0)</option>
+                                <option value="time set 1000">☀️ Morning (1000)</option>
+                                <option value="time set 6000">🌤️ Noon (6000)</option>
+                                <option value="time set 12000">🌇 Sunset (12000)</option>
+                                <option value="time set 18000">🌙 Night (18000)</option>
                             </select>
-                            <button class="btn" style="width:auto; background:#eab308; color:black; padding:8px 12px;" onclick="runQuick()">EXECUTE</button>
+                            <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('timeSelect')">SET TIME</button>
+
+                            <select id="weatherSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
+                                <option value="" disabled selected>Select Weather...</option>
+                                <option value="weather clear">🌤️ Clear</option>
+                                <option value="weather rain">🌧️ Rain</option>
+                                <option value="weather thunder">⛈️ Thunder</option>
+                            </select>
+                            <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('weatherSelect')">SET WEATHER</button>
+                        </div>
+                    </div>
+
+                    <div class="mc-group">
+                        <div class="mc-label">PLAYER CONTROL</div>
+                        <div class="player-row">
+                            <button class="btn" style="width:auto; background:#334155;" onclick="scanPlayers()">🔄 SCAN PLAYERS</button>
+                            <select id="playerList">
+                                <option value="" disabled selected>No players found</option>
+                            </select>
+                        </div>
+                        <div class="player-row">
+                             <select id="actionSelect">
+                                <option value="kick">Kick</option>
+                                <option value="ban">Ban</option>
+                                <option value="op">Op (Admin)</option>
+                                <option value="deop">Deop</option>
+                                <option value="give">Give Item</option>
+                                <option value="tp">Teleport To Me</option>
+                                <option value="gamemode creative">Creative Mode</option>
+                                <option value="gamemode survival">Survival Mode</option>
+                            </select>
+                            <button class="btn" style="width:auto; background:#eab308; color:black;" onclick="runPlayerAction()">EXECUTE</button>
                         </div>
                     </div>
 
@@ -584,7 +627,55 @@ SCRIPT = """
             });
         }
         function doMcCmd() { const i=document.getElementById('mcin'); if(i.value){ mcCmd(i.value); i.value=''; } }
-        function runQuick() { const c=document.getElementById('gameplaySelect').value; mcCmd(c); }
+        function runOpt(id) { const c=document.getElementById(id).value; if(c) mcCmd(c); }
+        
+        function scanPlayers() {
+            mcCmd('list');
+            setTimeout(() => {
+                fetch('/minecraft/players').then(r=>r.json()).then(data => {
+                    const sel = document.getElementById('playerList');
+                    sel.innerHTML = '';
+                    if(data.length === 0) {
+                        const opt = document.createElement('option');
+                        opt.text = "No players found";
+                        sel.add(opt);
+                    } else {
+                        data.forEach(p => {
+                            const opt = document.createElement('option');
+                            opt.value = p;
+                            opt.text = p;
+                            sel.add(opt);
+                        });
+                    }
+                });
+            }, 1500); // Wait for log to update
+        }
+
+        function runPlayerAction() {
+            const player = document.getElementById('playerList').value;
+            const action = document.getElementById('actionSelect').value;
+            if(!player || player === "No players found") { alert("Please select a player first (Scan Players)."); return; }
+            
+            let cmd = `${action} ${player}`;
+            
+            if(action === 'kick') {
+                const reason = prompt("Reason for kick:", "Kicked by admin");
+                if(reason === null) return;
+                cmd += ` ${reason}`;
+            } else if(action === 'ban') {
+                const reason = prompt("Reason for ban:", "Banned by admin");
+                if(reason === null) return;
+                cmd += ` ${reason}`;
+            } else if(action === 'give') {
+                const item = prompt("Item name (e.g. diamond):", "diamond");
+                if(item === null) return;
+                const amount = prompt("Amount:", "1");
+                if(amount === null) return;
+                cmd = `give ${player} ${item} ${amount}`;
+            }
+            
+            mcCmd(cmd);
+        }
 
         function loadMcLog() {
             fetch('/minecraft/log').then(r=>r.json()).then(d=>{
@@ -796,17 +887,13 @@ def mc_cmd():
         if c.startswith('/'): c = c[1:]
         
         # Get dynamic user
-        target_user = MC_USER
-        if target_user == "auto":
-             owner, _ = get_mc_process_owner()
-             if owner: target_user = owner
-             else: target_user = "root" # Fallback
-
+        target_user = resolve_mc_user()
+        
         # Use double quotes and Carriage Return \r for reliable screen injection
+        # We construct the command differently for root vs sudo user
         screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
         
         if target_user != "root":
-            # Wrap the screen command in sudo for the specific user
             final_cmd = f"sudo -u {target_user} {screen_cmd}"
         else:
             final_cmd = screen_cmd
@@ -815,6 +902,38 @@ def mc_cmd():
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'error': str(e)})
+
+@app.route('/minecraft/players')
+def mc_players():
+    try:
+        # 1. Read current log end to establish baseline (optional but safer)
+        # 2. Send "list" command
+        # 3. Read log again and look for the "There are x of y players online:" line
+        
+        # Using existing log route logic to just read tail is easier
+        log_path = os.path.join(MC_PATH, "logs/latest.log")
+        if not os.path.exists(log_path): return jsonify([])
+        
+        # Read last 20 lines
+        output = subprocess.check_output(f"tail -n 20 '{log_path}'", shell=True).decode('utf-8', errors='ignore')
+        lines = output.strip().split('\n')
+        
+        # Parse backwards for the player list line
+        players = []
+        # Matches standard Spigot/Paper/Vanilla "There are x of y players online: Name1, Name2"
+        # Regex: match everything after "online: " split by comma
+        for line in reversed(lines):
+            if "players online:" in line:
+                parts = line.split("players online:")
+                if len(parts) > 1:
+                    names = parts[1].strip()
+                    if names:
+                        players = [n.strip() for n in names.split(',')]
+                    break
+        
+        return jsonify(players)
+    except:
+        return jsonify([])
 
 @app.route('/minecraft/log')
 def mc_log():
@@ -895,17 +1014,12 @@ def mc_status():
                 owner = subprocess.check_output(f"ps -o user= -p {p}", shell=True).decode().strip()
         except: pass
         
-        # Determine target user for screen check
-        target_user = MC_USER
-        if target_user == "auto" and owner != "Unknown":
-            target_user = owner
+        target_user = resolve_mc_user()
 
         try:
             # Check screens for the specific user
             if target_user != "root":
                 # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
-                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
-                # We use run to capture output regardless of return code.
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
@@ -938,7 +1052,7 @@ def mc_status():
         else: path_status = f"Invalid: {MC_PATH}"
         
         try:
-            target_user = MC_USER if MC_USER != "auto" else "root"
+            target_user = resolve_mc_user()
             if target_user != "root":
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -977,16 +1091,16 @@ def pull_github():
             if remote_ver == VERSION:
                 return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
 
-        # 4. Safe Write (Handles Permissions)
-        if safe_write_file(get_file_path(), new_code):
-            def restart():
-                time.sleep(1)
-                subprocess.run("sudo systemctl restart nexus_controller", shell=True)
-            threading.Thread(target=restart).start()
-            return jsonify({'status': 'ok'})
-        else:
-            return jsonify({'status': 'error', 'error': 'Permission denied writing file.'})
-
+        with open(__file__, 'w') as f:
+            f.write(new_code)
+            
+        def restart():
+            time.sleep(1)
+            # Renamed to match the file name change
+            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            
+        threading.Thread(target=restart).start()
+        return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)})
 
@@ -1031,7 +1145,7 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now fixes permissions immediately after creation
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
