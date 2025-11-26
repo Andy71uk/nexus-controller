@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.7 (Admin Suite)"
+VERSION = "5.7.1 (MC Layout)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-admin-suite-secure-key-v5-7"
+app.secret_key = "nexus-mclayout-secure-key-v5-7-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -199,8 +199,7 @@ STYLE_CSS = """
     .cmds { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; }
     .cmd-btn { background: #334155; border: none; color: white; padding: 10px; text-align: left; cursor: pointer; }
     .cmd-btn:hover { background: #475569; }
-    /* Terminal fixed height */
-    .term { background: #000; height: 300px; border: 1px solid #334155; padding: 10px; overflow-y: auto; font-family: monospace; display: flex; flex-direction: column-reverse; color: #4ade80; }
+    .term { background: #000; flex: 1; border: 1px solid #334155; padding: 10px; overflow-y: auto; font-family: monospace; display: flex; flex-direction: column-reverse; color: #4ade80; }
     
     table { width: 100%; border-collapse: collapse; }
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
@@ -225,8 +224,8 @@ STYLE_CSS = """
     .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; font-size: 0.85rem;}
     .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
     
-    /* MC Terminal flex height */
-    .mc-term { background: #101010; border: 1px solid #333; color: #aaa; flex:1; min-height:150px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
+    /* MC Terminal fixed height */
+    .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 180px; overflow-y: auto; padding: 5px; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; }
     
     .player-row { display: flex; gap: 5px; margin-top: 5px; }
     .player-row select { flex: 1; background: #2d2d2d; border: 1px solid #444; color: white; }
@@ -248,8 +247,18 @@ STYLE_CSS = """
 </style>
 """
 
-BODY = """
+HTML_HEADER = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+{STYLE_CSS}
 </head>
+"""
+
+BODY = """
 <body>
     {% if not logged_in %}
     <div class="overlay">
@@ -308,36 +317,44 @@ BODY = """
 
     <!-- MINECRAFT -->
     <div id="minecraft" class="page">
-        <div class="card" style="flex:1; display:flex; flex-direction:column;">
+        <div class="card" style="flex:1; display:flex; flex-direction:column; overflow: hidden;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                 <h3 style="margin:0; color:var(--prim);">Minecraft Console</h3>
-                <div id="mc-status" style="font-weight:bold;">Checking...</div>
+                <div id="mc-status" style="font-weight:bold; font-size:0.9rem;">Checking...</div>
             </div>
             
-            <div class="grid-split" style="height: 100%;">
-                <!-- LEFT COLUMN -->
-                <div style="overflow-y:auto; padding-right:10px;">
-                    <div style="margin-bottom:15px; font-size:0.8rem; color:#94a3b8;">
-                        Active Screens: <span id="active-screens" style="color:#e2e8f0; font-family:monospace;">Scanning...</span>
-                    </div>
-                    <div style="margin-bottom:15px; font-size:0.8rem; color:#94a3b8;">
-                        Process Owner: <span id="proc-owner" style="color:#e2e8f0; font-family:monospace;">Scanning...</span>
-                    </div>
-                    <div style="margin-bottom:15px; font-size:0.8rem; color:#94a3b8;">
-                        Server Path: <span id="path-status" style="color:#e2e8f0; font-family:monospace;">Checking...</span>
-                    </div>
+            <!-- Fixed Terminal at Top -->
+            <div style="display:flex; flex-direction:column; gap:5px; margin-bottom: 10px;">
+                <div class="mc-term" id="mc-log"><div>Loading logs...</div></div>
+                <div style="display:flex; gap:5px;">
+                    <input id="mcin" type="text" placeholder="Console Command (e.g. op Steve)..." onkeypress="if(event.key=='Enter')doMcCmd()">
+                    <button class="btn" style="width:auto" onclick="doMcCmd()">SEND</button>
+                </div>
+            </div>
+
+            <!-- Scrollable Actions Below -->
+            <div style="overflow-y:auto; flex:1; padding-right:5px;">
+                
+                <!-- Compact Info Bar -->
+                <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px; font-size:0.75rem; color:#64748b; background:#0f172a; padding:5px 10px; border-radius:4px; border:1px solid #334155;">
+                    <span>Owner: <span id="proc-owner" style="color:#e2e8f0;">...</span></span>
+                    <span>Path: <span id="path-status" style="color:#e2e8f0;">...</span></span>
+                    <span>Screen: <span id="active-screens" style="color:#e2e8f0;">...</span></span>
+                </div>
+                
+                <!-- Action Grid -->
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap:10px;">
                     
                     <div class="mc-group">
                         <div class="mc-label">VITAL COMMANDS</div>
                         <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('save-all')">💾 SAVE ALL</button>
+                            <button class="btn-mc" onclick="mcCmd('save-all')">💾 SAVE</button>
                             <button class="btn-mc" onclick="mcCmd('whitelist on')">🔒 WL ON</button>
                             <button class="btn-mc" onclick="mcCmd('whitelist off')">🔓 WL OFF</button>
                             <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">🛑 STOP</button>
                         </div>
                     </div>
 
-                    <!-- SERVER UTILS -->
                     <div class="mc-group">
                         <div class="mc-label">SERVER UTILS</div>
                         <div class="mc-btn-row">
@@ -351,7 +368,6 @@ BODY = """
                         </div>
                     </div>
 
-                    <!-- COMMUNICATION -->
                     <div class="mc-group">
                         <div class="mc-label">COMMUNICATION</div>
                         <div class="mc-btn-row">
@@ -361,74 +377,53 @@ BODY = """
                     </div>
 
                     <div class="mc-group">
-                        <div class="mc-label">GEYSER / FLOODGATE</div>
-                        <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('geyser reload')">🔄 RELOAD</button>
-                            <button class="btn-mc" onclick="mcCmd('geyser offhand')">✋ OFFHAND</button>
+                        <div class="mc-label">GAMEPLAY ACTIONS</div>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
+                            <select id="timeSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
+                                <option value="" disabled selected>Time...</option>
+                                <option value="time set 0">🌅 Sunrise</option>
+                                <option value="time set 1000">☀️ Morning</option>
+                                <option value="time set 6000">🌤️ Noon</option>
+                                <option value="time set 12000">🌇 Sunset</option>
+                                <option value="time set 18000">🌙 Night</option>
+                            </select>
+                            <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('timeSelect')">SET</button>
+    
+                            <select id="weatherSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
+                                <option value="" disabled selected>Weather...</option>
+                                <option value="weather clear">🌤️ Clear</option>
+                                <option value="weather rain">🌧️ Rain</option>
+                                <option value="weather thunder">⛈️ Thunder</option>
+                            </select>
+                            <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('weatherSelect')">SET</button>
                         </div>
-                    </div>
-                </div>
-                
-                <!-- RIGHT COLUMN -->
-                <div style="display:flex; flex-direction:column; gap:10px; flex:1; overflow-y: auto;">
-                    <div class="mc-term" id="mc-log" style="flex:1; min-height: 150px;"><div>Loading logs...</div></div>
-                    
-                    <div style="display:flex; gap:5px;">
-                        <input id="mcin" type="text" placeholder="Console Command (e.g. op Steve)..." onkeypress="if(event.key=='Enter')doMcCmd()">
-                        <button class="btn" style="width:auto" onclick="doMcCmd()">SEND</button>
-                        <button class="btn" style="width:auto; background:#334155;" onclick="loadMcLog()">REFRESH</button>
                     </div>
 
-                    <!-- MOVED SECTIONS -->
-                    <div style="border-top: 1px solid #334155; margin-top: 5px; padding-top: 10px;">
-                        <div class="mc-group">
-                            <div class="mc-label">GAMEPLAY ACTIONS</div>
-                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px;">
-                                <select id="timeSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
-                                    <option value="" disabled selected>Select Time...</option>
-                                    <option value="time set 0">🌅 Sunrise (0)</option>
-                                    <option value="time set 1000">☀️ Morning (1000)</option>
-                                    <option value="time set 6000">🌤️ Noon (6000)</option>
-                                    <option value="time set 12000">🌇 Sunset (12000)</option>
-                                    <option value="time set 18000">🌙 Night (18000)</option>
-                                </select>
-                                <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('timeSelect')">SET TIME</button>
-    
-                                <select id="weatherSelect" style="background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px;">
-                                    <option value="" disabled selected>Select Weather...</option>
-                                    <option value="weather clear">🌤️ Clear</option>
-                                    <option value="weather rain">🌧️ Rain</option>
-                                    <option value="weather thunder">⛈️ Thunder</option>
-                                </select>
-                                <button class="btn" style="width:auto; padding:8px;" onclick="runOpt('weatherSelect')">SET WEATHER</button>
-                            </div>
+                    <div class="mc-group">
+                        <div class="mc-label">PLAYER CONTROL</div>
+                        <div class="player-row">
+                            <button class="btn" style="width:auto; background:#334155;" onclick="scanPlayers()">🔄 SCAN</button>
+                            <select id="playerList">
+                                <option value="" disabled selected>No players</option>
+                            </select>
                         </div>
-    
-                        <div class="mc-group">
-                            <div class="mc-label">PLAYER CONTROL</div>
-                            <div class="player-row">
-                                <button class="btn" style="width:auto; background:#334155;" onclick="scanPlayers()">🔄 SCAN PLAYERS</button>
-                                <select id="playerList">
-                                    <option value="" disabled selected>No players found</option>
-                                </select>
-                            </div>
-                            <div class="player-row">
-                                 <select id="actionSelect">
-                                    <option value="kick">Kick</option>
-                                    <option value="ban">Ban</option>
-                                    <option value="op">Op (Admin)</option>
-                                    <option value="deop">Deop</option>
-                                    <option value="give">Give Item</option>
-                                    <option value="tp">Teleport To Me</option>
-                                    <option value="gamemode creative">Creative Mode</option>
-                                    <option value="gamemode survival">Survival Mode</option>
-                                    <option value="xp">Give XP</option>
-                                    <option value="spawnpoint">Set Spawnpoint</option>
-                                </select>
-                                <button class="btn" style="width:auto; background:#eab308; color:black;" onclick="runPlayerAction()">EXECUTE</button>
-                            </div>
+                        <div class="player-row">
+                             <select id="actionSelect">
+                                <option value="kick">Kick</option>
+                                <option value="ban">Ban</option>
+                                <option value="op">Op (Admin)</option>
+                                <option value="deop">Deop</option>
+                                <option value="give">Give Item</option>
+                                <option value="tp">Teleport To Me</option>
+                                <option value="gamemode creative">Creative</option>
+                                <option value="gamemode survival">Survival</option>
+                                <option value="xp">Give XP</option>
+                                <option value="spawnpoint">Set Spawn</option>
+                            </select>
+                            <button class="btn" style="width:auto; background:#eab308; color:black;" onclick="runPlayerAction()">EXECUTE</button>
                         </div>
                     </div>
+
                 </div>
             </div>
         </div>
@@ -513,19 +508,6 @@ BODY = """
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('installModal').style.display='none'">CLOSE</button>
                 <button class="btn" onclick="copyInstall()">COPY</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- RECOVERY MODAL -->
-    <div class="overlay" id="recoveryModal" style="display:none;">
-        <div class="box" style="width:500px; text-align:left;">
-            <h3 style="margin-top:0; color:var(--warn);">⚠️ EMERGENCY RECOVERY</h3>
-            <p>If your server crashes or you get locked out, SSH in and run this command to install Safe Mode.</p>
-            <div class="install-cmd" id="recoveryCmd">curl -sL {{ installer_url.replace("install.sh", "recovery.sh") }} | sudo bash</div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
-                <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('recoveryModal').style.display='none'">CLOSE</button>
-                <button class="btn" onclick="copyRecovery()">COPY</button>
             </div>
         </div>
     </div>
@@ -658,7 +640,8 @@ SCRIPT = """
         // --- MINECRAFT FUNCTIONS ---
         function mcCmd(c) {
             const t = document.getElementById('mc-log');
-            t.innerHTML = `<div style="color:#eab308">>> ${c}</div>` + t.innerHTML;
+            t.innerHTML += `<div><span style="color:#eab308">>> ${c}</span></div>`;
+            t.scrollTop = t.scrollHeight;
             fetch('/minecraft/cmd', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cmd:c})})
             .then(r=>r.json()).then(d=>{
                 if(d.error) alert(d.error);
@@ -726,12 +709,18 @@ SCRIPT = """
 
         function loadMcLog() {
             fetch('/minecraft/log').then(r=>r.json()).then(d=>{
-                document.getElementById('mc-log').innerText = d.join('\\n');
+                const el = document.getElementById('mc-log');
+                el.innerText = d.join('\\n');
+                el.scrollTop = el.scrollHeight;
             });
         }
         // Check Minecraft Status periodically
         setInterval(()=>{
             if(!document.getElementById('minecraft').classList.contains('active')) return;
+            
+            // Update Log
+            loadMcLog();
+
             fetch('/minecraft/status').then(r=>r.json()).then(d=>{
                 const s = document.getElementById('mc-status');
                 if(d.running) {
@@ -758,19 +747,6 @@ SCRIPT = """
 
         function copyInstall() {
             const txt = document.getElementById('installCmd').innerText;
-            if(navigator.clipboard) {
-                navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
-            } else {
-                prompt("Copy this:", txt);
-            }
-        }
-        
-        function openRecovery() {
-            document.getElementById('recoveryModal').style.display = 'flex';
-        }
-
-        function copyRecovery() {
-            const txt = document.getElementById('recoveryCmd').innerText;
             if(navigator.clipboard) {
                 navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
             } else {
@@ -1204,7 +1180,7 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now fixes permissions immediately after creation
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
