@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.3 (Player Command Center)"
+VERSION = "5.6.3 (Write Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-player-cmd-secure-key-v5-5"
+app.secret_key = "nexus-write-fix-secure-key-v5-5-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -49,6 +49,30 @@ def get_os_from_ua(ua):
     if 'macintosh' in ua: return 'macOS'
     if 'linux' in ua: return 'Linux'
     return 'Unknown'
+
+def get_file_path():
+    return os.path.abspath(__file__)
+
+def safe_write_file(path, content):
+    """Writes file, using sudo fallback if permission denied."""
+    try:
+        with open(path, 'w') as f:
+            f.write(content)
+        return True
+    except PermissionError:
+        try:
+            # Fallback: Write to temp and sudo mv
+            tmp_path = path + ".tmp"
+            with open(tmp_path, 'w') as f:
+                f.write(content)
+            subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
+            # Try to fix ownership to current user to avoid future sudo needs
+            user = os.getenv('USER')
+            if user: subprocess.run(f"sudo chown {user} {path}", shell=True)
+            return True
+        except Exception as e:
+            logging.error(f"Safe write failed: {e}")
+            return False
 
 def get_host_info():
     info = {}
@@ -512,9 +536,7 @@ BODY = """
             <p style="color:#94a3b8; font-size:0.9rem;">Reloading dashboard automatically...</p>
         </div>
     </div>
-"""
 
-SCRIPT = """
     <script>
         function view(id, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -1091,16 +1113,16 @@ def pull_github():
             if remote_ver == VERSION:
                 return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
 
-        with open(__file__, 'w') as f:
-            f.write(new_code)
-            
-        def restart():
-            time.sleep(1)
-            # Renamed to match the file name change
-            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
-            
-        threading.Thread(target=restart).start()
-        return jsonify({'status': 'ok'})
+        # 4. Safe Write (Handles Permissions)
+        if safe_write_file(get_file_path(), new_code):
+            def restart():
+                time.sleep(1)
+                subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            threading.Thread(target=restart).start()
+            return jsonify({'status': 'ok'})
+        else:
+            return jsonify({'status': 'error', 'error': 'Permission denied writing file.'})
+
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)})
 
@@ -1145,7 +1167,7 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        # UPDATED: Installer now fixes permissions immediately after creation
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
