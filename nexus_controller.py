@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6 (Polished)"
+VERSION = "5.6.1 (Icon Update)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-polished-secure-key-v5-0"
+app.secret_key = "nexus-icon-secure-key-v5-3"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -313,29 +313,29 @@ BODY = """
                     <div class="mc-group">
                         <div class="mc-label">VITAL COMMANDS</div>
                         <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('save-all')">Save All</button>
-                            <button class="btn-mc" onclick="mcCmd('whitelist on')">Whitelist On</button>
-                            <button class="btn-mc" onclick="mcCmd('whitelist off')">Whitelist Off</button>
-                            <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">STOP SERVER</button>
+                            <button class="btn-mc" onclick="mcCmd('save-all')">💾 SAVE ALL</button>
+                            <button class="btn-mc" onclick="mcCmd('whitelist on')">🔒 WL ON</button>
+                            <button class="btn-mc" onclick="mcCmd('whitelist off')">🔓 WL OFF</button>
+                            <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">🛑 STOP</button>
                         </div>
                     </div>
 
                     <div class="mc-group">
                         <div class="mc-label">GEYSER / FLOODGATE</div>
                         <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('geyser reload')">Reload Geyser</button>
-                            <button class="btn-mc" onclick="mcCmd('geyser offhand')">Offhand</button>
+                            <button class="btn-mc" onclick="mcCmd('geyser reload')">🔄 RELOAD</button>
+                            <button class="btn-mc" onclick="mcCmd('geyser offhand')">✋ OFFHAND</button>
                         </div>
                     </div>
 
                     <div class="mc-group">
                         <div class="mc-label">GAMEPLAY</div>
                         <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('time set day')">Day</button>
-                            <button class="btn-mc" onclick="mcCmd('time set night')">Night</button>
-                            <button class="btn-mc" onclick="mcCmd('weather clear')">Clear Weather</button>
-                            <button class="btn-mc" onclick="mcCmd('weather thunder')">Thunder</button>
-                            <button class="btn-mc" onclick="mcCmd('kill @e[type=zombie]')">Kill Zombies</button>
+                            <button class="btn-mc" onclick="mcCmd('time set day')">☀️ DAY</button>
+                            <button class="btn-mc" onclick="mcCmd('time set night')">🌙 NIGHT</button>
+                            <button class="btn-mc" onclick="mcCmd('weather clear')">🌤️ CLEAR</button>
+                            <button class="btn-mc" onclick="mcCmd('weather thunder')">⛈️ THUNDER</button>
+                            <button class="btn-mc" onclick="mcCmd('kill @e[type=zombie]')">🧟 KILL ZOMBIES</button>
                         </div>
                     </div>
 
