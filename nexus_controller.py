@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.3 (Write Fix)"
+VERSION = "5.6.4 (Write Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
 app.secret_key = "nexus-write-fix-secure-key-v5-5-1"
 
