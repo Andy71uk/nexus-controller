@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.2 (Layout Tweak)"
+VERSION = "5.6.3 (UI Compact)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-layout-secure-key-v5-6-2"
+app.secret_key = "nexus-compact-secure-key-v5-6-3"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -222,7 +222,8 @@ STYLE_CSS = """
     .cmds { display: flex; flex-direction: column; gap: 5px; overflow-y: auto; }
     .cmd-btn { background: #334155; border: none; color: white; padding: 10px; text-align: left; cursor: pointer; }
     .cmd-btn:hover { background: #475569; }
-    .term { background: #000; flex: 1; border: 1px solid #334155; padding: 10px; overflow-y: auto; font-family: monospace; display: flex; flex-direction: column-reverse; color: #4ade80; }
+    /* Terminal fixed height */
+    .term { background: #000; height: 300px; border: 1px solid #334155; padding: 10px; overflow-y: auto; font-family: monospace; display: flex; flex-direction: column-reverse; color: #4ade80; }
     
     table { width: 100%; border-collapse: collapse; }
     td, th { text-align: left; padding: 8px; border-bottom: 1px solid #334155; }
@@ -246,6 +247,7 @@ STYLE_CSS = """
     .mc-btn-row { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
     .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; }
     .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
+    /* MC Terminal fixed height */
     .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
     
     .player-row { display: flex; gap: 5px; margin-top: 5px; }
@@ -316,7 +318,7 @@ BODY = """
                 <button class="cmd-btn" onclick="run('sudo systemctl restart nexus_controller')">✨ Restart App</button>
                 <button class="cmd-btn" style="color:var(--red)" onclick="if(confirm('Reboot?')) run('sudo reboot')">🔄 Reboot</button>
             </div>
-            <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-height:0;">
+            <div style="display:flex; flex-direction:column; gap:5px;">
                 <div class="term" id="term"><div>Ready...</div></div>
                 <div style="display:flex; gap:5px;">
                     <input id="cin" type="text" placeholder="Command..." onkeypress="if(event.key=='Enter')doCmd()">
@@ -368,7 +370,7 @@ BODY = """
                 
                 <!-- RIGHT COLUMN -->
                 <div style="display:flex; flex-direction:column; gap:10px; flex:1; overflow-y: auto;">
-                    <div class="mc-term" id="mc-log" style="flex:1; min-height: 200px;"><div>Loading logs...</div></div>
+                    <div class="mc-term" id="mc-log"><div>Loading logs...</div></div>
                     
                     <div style="display:flex; gap:5px;">
                         <input id="mcin" type="text" placeholder="Console Command (e.g. op Steve)..." onkeypress="if(event.key=='Enter')doMcCmd()">
