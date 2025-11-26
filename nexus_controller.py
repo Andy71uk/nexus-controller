@@ -18,15 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.3 (UI Compact)"
+VERSION = "5.7 (Admin Suite)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-compact-secure-key-v5-6-3"
+app.secret_key = "nexus-admin-suite-secure-key-v5-7"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
 # Set to "auto" to guess, or the specific user (e.g. "minecraft")
-MC_USER = "auto"
+MC_USER = "auto" 
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -41,29 +41,6 @@ GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh
 CLIENTS = {}
 
 # --- Helper Functions ---
-def get_file_path():
-    return os.path.abspath(__file__)
-
-def safe_write_file(path, content):
-    """Writes file, using sudo fallback if permission denied."""
-    try:
-        with open(path, 'w') as f:
-            f.write(content)
-        return True
-    except PermissionError:
-        try:
-            # Fallback: Write to temp and sudo mv
-            tmp_path = path + ".tmp"
-            with open(tmp_path, 'w') as f:
-                f.write(content)
-            subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
-            user = os.getenv('USER')
-            if user: subprocess.run(f"sudo chown {user} {path}", shell=True)
-            return True
-        except Exception as e:
-            logging.error(f"Safe write failed: {e}")
-            return False
-
 def get_os_from_ua(ua):
     ua = ua.lower()
     if 'windows' in ua: return 'Windows'
@@ -244,11 +221,12 @@ STYLE_CSS = """
     .info-val { font-family:monospace; font-size:0.95rem; color:#e2e8f0; word-break:break-all; }
 
     .mc-group { margin-bottom: 15px; } .mc-label { color: #94a3b8; font-size:0.8rem; margin-bottom:5px; text-transform:uppercase; }
-    .mc-btn-row { display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
-    .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; }
+    .mc-btn-row { display:grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap:8px; }
+    .btn-mc { background: #2d2d2d; border: 1px solid #444; color: #eee; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; transition:0.2s; font-size: 0.85rem;}
     .btn-mc:hover { background: #3d3d3d; border-color: var(--prim); }
-    /* MC Terminal fixed height */
-    .mc-term { background: #101010; border: 1px solid #333; color: #aaa; height: 300px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
+    
+    /* MC Terminal flex height */
+    .mc-term { background: #101010; border: 1px solid #333; color: #aaa; flex:1; min-height:150px; overflow-y: auto; padding: 10px; font-family: monospace; font-size: 0.9rem; white-space: pre-wrap; display:flex; flex-direction:column-reverse; }
     
     .player-row { display: flex; gap: 5px; margin-top: 5px; }
     .player-row select { flex: 1; background: #2d2d2d; border: 1px solid #444; color: white; }
@@ -318,7 +296,7 @@ BODY = """
                 <button class="cmd-btn" onclick="run('sudo systemctl restart nexus_controller')">✨ Restart App</button>
                 <button class="cmd-btn" style="color:var(--red)" onclick="if(confirm('Reboot?')) run('sudo reboot')">🔄 Reboot</button>
             </div>
-            <div style="display:flex; flex-direction:column; gap:5px;">
+            <div style="display:flex; flex-direction:column; gap:5px; flex:1; min-height:0;">
                 <div class="term" id="term"><div>Ready...</div></div>
                 <div style="display:flex; gap:5px;">
                     <input id="cin" type="text" placeholder="Command..." onkeypress="if(event.key=='Enter')doCmd()">
@@ -359,6 +337,29 @@ BODY = """
                         </div>
                     </div>
 
+                    <!-- SERVER UTILS -->
+                    <div class="mc-group">
+                        <div class="mc-label">SERVER UTILS</div>
+                        <div class="mc-btn-row">
+                            <button class="btn-mc" onclick="mcCmd('tps')">TPS</button>
+                            <button class="btn-mc" onclick="mcCmd('version')">VER</button>
+                            <button class="btn-mc" onclick="mcCmd('seed')">SEED</button>
+                             <button class="btn-mc" onclick="mcCmd('save-on')">SAVE ON</button>
+                            <button class="btn-mc" onclick="mcCmd('save-off')">SAVE OFF</button>
+                            <button class="btn-mc" style="color:#eab308; border-color:#eab308;" onclick="if(confirm('Reload Plugins?')) mcCmd('reload confirm')">RELOAD</button>
+                            <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Restart Server?')) mcCmd('restart')">RESTART</button>
+                        </div>
+                    </div>
+
+                    <!-- COMMUNICATION -->
+                    <div class="mc-group">
+                        <div class="mc-label">COMMUNICATION</div>
+                        <div class="mc-btn-row">
+                            <button class="btn-mc" onclick="promptCmd('say', 'Broadcast Message')">📢 SAY</button>
+                            <button class="btn-mc" onclick="promptCmd('title @a title', 'Screen Title Message')">📺 TITLE</button>
+                        </div>
+                    </div>
+
                     <div class="mc-group">
                         <div class="mc-label">GEYSER / FLOODGATE</div>
                         <div class="mc-btn-row">
@@ -370,7 +371,7 @@ BODY = """
                 
                 <!-- RIGHT COLUMN -->
                 <div style="display:flex; flex-direction:column; gap:10px; flex:1; overflow-y: auto;">
-                    <div class="mc-term" id="mc-log"><div>Loading logs...</div></div>
+                    <div class="mc-term" id="mc-log" style="flex:1; min-height: 150px;"><div>Loading logs...</div></div>
                     
                     <div style="display:flex; gap:5px;">
                         <input id="mcin" type="text" placeholder="Console Command (e.g. op Steve)..." onkeypress="if(event.key=='Enter')doMcCmd()">
@@ -421,6 +422,8 @@ BODY = """
                                     <option value="tp">Teleport To Me</option>
                                     <option value="gamemode creative">Creative Mode</option>
                                     <option value="gamemode survival">Survival Mode</option>
+                                    <option value="xp">Give XP</option>
+                                    <option value="spawnpoint">Set Spawnpoint</option>
                                 </select>
                                 <button class="btn" style="width:auto; background:#eab308; color:black;" onclick="runPlayerAction()">EXECUTE</button>
                             </div>
@@ -664,6 +667,11 @@ SCRIPT = """
         function doMcCmd() { const i=document.getElementById('mcin'); if(i.value){ mcCmd(i.value); i.value=''; } }
         function runOpt(id) { const c=document.getElementById(id).value; if(c) mcCmd(c); }
         
+        function promptCmd(cmd, label) {
+            const arg = prompt(label + ":");
+            if (arg) mcCmd(cmd + " " + arg);
+        }
+
         function scanPlayers() {
             mcCmd('list');
             setTimeout(() => {
@@ -707,6 +715,10 @@ SCRIPT = """
                 const amount = prompt("Amount:", "1");
                 if(amount === null) return;
                 cmd = `give ${player} ${item} ${amount}`;
+            } else if(action === 'xp') {
+                const amount = prompt("XP Amount:", "100");
+                if(amount === null) return;
+                cmd = `xp add ${player} ${amount}`;
             }
             
             mcCmd(cmd);
@@ -938,7 +950,6 @@ def mc_cmd():
         target_user = resolve_mc_user()
         
         # Use double quotes and Carriage Return \r for reliable screen injection
-        # We construct the command differently for root vs sudo user
         screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{c}\r"'
         
         if target_user != "root":
@@ -1193,7 +1204,7 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        # UPDATED: Installer now fixes permissions immediately after creation
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
