@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.1 (Icon Update)"
+VERSION = "5.6.2 (Minecraft UI)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-icon-secure-key-v5-3"
+app.secret_key = "nexus-mc-ui-secure-key-v5-4"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -157,7 +157,8 @@ STYLE_CSS = """
     
     .overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg); z-index:99; display: flex; justify-content: center; align-items: center; }
     .box { background: var(--panel); padding: 30px; border: 1px solid var(--prim); border-radius: 10px; text-align: center; width: 300px; }
-    input { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; width: 100%; margin-bottom: 10px; box-sizing: border-box; text-align: center; }
+    input, select { background: #0f172a; border: 1px solid #334155; color: white; padding: 10px; width: 100%; margin-bottom: 10px; box-sizing: border-box; text-align: center; }
+    select { text-align: left; }
     .btn { background: var(--prim); color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; width: 100%; }
     .btn:hover { opacity: 0.9; }
     .err { color: var(--red); margin-top: 10px; }
@@ -319,23 +320,35 @@ BODY = """
                             <button class="btn-mc" style="color:#ef4444; border-color:#ef4444;" onclick="if(confirm('Stop Server?')) mcCmd('stop')">🛑 STOP</button>
                         </div>
                     </div>
-
+                    
+                    <!-- GAMEPLAY SECTION MOVED HERE & REDESIGNED -->
                     <div class="mc-group">
-                        <div class="mc-label">GEYSER / FLOODGATE</div>
-                        <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('geyser reload')">🔄 RELOAD</button>
-                            <button class="btn-mc" onclick="mcCmd('geyser offhand')">✋ OFFHAND</button>
-                        </div>
-                    </div>
-
-                    <div class="mc-group">
-                        <div class="mc-label">GAMEPLAY</div>
-                        <div class="mc-btn-row">
-                            <button class="btn-mc" onclick="mcCmd('time set day')">☀️ DAY</button>
-                            <button class="btn-mc" onclick="mcCmd('time set night')">🌙 NIGHT</button>
-                            <button class="btn-mc" onclick="mcCmd('weather clear')">🌤️ CLEAR</button>
-                            <button class="btn-mc" onclick="mcCmd('weather thunder')">⛈️ THUNDER</button>
-                            <button class="btn-mc" onclick="mcCmd('kill @e[type=zombie]')">🧟 KILL ZOMBIES</button>
+                        <div class="mc-label">GAMEPLAY ACTIONS</div>
+                        <div style="display:flex; gap:5px; margin-top:5px;">
+                             <select id="gameplaySelect" style="flex:1; background:#2d2d2d; border:1px solid #444; color:white; padding:8px; border-radius:4px; text-align:left;">
+                                <optgroup label="Time">
+                                    <option value="time set day">☀️ Time: Day</option>
+                                    <option value="time set night">🌙 Time: Night</option>
+                                    <option value="time set 0">🌅 Time: Sunrise</option>
+                                    <option value="time set 12000">🌇 Time: Sunset</option>
+                                </optgroup>
+                                <optgroup label="Weather">
+                                    <option value="weather clear">🌤️ Weather: Clear</option>
+                                    <option value="weather rain">🌧️ Weather: Rain</option>
+                                    <option value="weather thunder">⛈️ Weather: Thunder</option>
+                                </optgroup>
+                                <optgroup label="Entities">
+                                     <option value="kill @e[type=zombie]">🧟 Kill Zombies</option>
+                                     <option value="kill @e[type=skeleton]">💀 Kill Skeletons</option>
+                                     <option value="kill @e[type=creeper]">🧨 Kill Creepers</option>
+                                     <option value="kill @e[type=spider]">🕷️ Kill Spiders</option>
+                                </optgroup>
+                                <optgroup label="Geyser">
+                                    <option value="geyser reload">🔄 Reload Geyser</option>
+                                    <option value="geyser offhand">✋ Offhand</option>
+                                </optgroup>
+                            </select>
+                            <button class="btn" style="width:auto; background:#eab308; color:black; padding:8px 12px;" onclick="runQuick()">EXECUTE</button>
                         </div>
                     </div>
 
@@ -571,6 +584,7 @@ SCRIPT = """
             });
         }
         function doMcCmd() { const i=document.getElementById('mcin'); if(i.value){ mcCmd(i.value); i.value=''; } }
+        function runQuick() { const c=document.getElementById('gameplaySelect').value; mcCmd(c); }
 
         function loadMcLog() {
             fetch('/minecraft/log').then(r=>r.json()).then(d=>{
@@ -890,6 +904,8 @@ def mc_status():
             # Check screens for the specific user
             if target_user != "root":
                 # Use -ls to list screens. We need to capture stdout even if it returns 1 (no screens)
+                # Note: screen -ls returns 1 if no screens, which causes check_output to fail.
+                # We use run to capture output regardless of return code.
                 cmd = f"sudo -u {target_user} screen -ls"
                 res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 out = res.stdout.decode().strip()
@@ -961,16 +977,16 @@ def pull_github():
             if remote_ver == VERSION:
                 return jsonify({'status': 'no_update', 'message': f'No updates available. Server is running {VERSION}'})
 
-        with open(__file__, 'w') as f:
-            f.write(new_code)
-            
-        def restart():
-            time.sleep(1)
-            # Renamed to match the file name change
-            subprocess.run("sudo systemctl restart nexus_controller", shell=True)
-            
-        threading.Thread(target=restart).start()
-        return jsonify({'status': 'ok'})
+        # 4. Safe Write (Handles Permissions)
+        if safe_write_file(get_file_path(), new_code):
+            def restart():
+                time.sleep(1)
+                subprocess.run("sudo systemctl restart nexus_controller", shell=True)
+            threading.Thread(target=restart).start()
+            return jsonify({'status': 'ok'})
+        else:
+            return jsonify({'status': 'error', 'error': 'Permission denied writing file.'})
+
     except Exception as e:
         return jsonify({'status': 'error', 'error': str(e)})
 
@@ -1015,11 +1031,13 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
+        # UPDATED: Installer now fixes permissions immediately after creation
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
 DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+# Fix permissions for the SUDO_USER
+chown ${{SUDO_USER:-$USER}} "$DIR/nexus_controller.py"
 cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
 [Unit]\nDescription=Nexus Controller\nAfter=network.target
 [Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
