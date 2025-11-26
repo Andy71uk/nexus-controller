@@ -18,9 +18,9 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.5 (Stability Patch)"
+VERSION = "5.6.1 (Startup Fix)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-stability-secure-key-v5-6"
+app.secret_key = "nexus-startup-fix-secure-key-v5-6-1"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
@@ -182,7 +182,7 @@ def resolve_mc_user():
 
 # --- HTML Frontend ---
 
-HTML_TOP = """
+HTML_HEADER = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -191,7 +191,7 @@ HTML_TOP = """
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
 """
 
-STYLE = """
+STYLE_CSS = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -498,19 +498,6 @@ BODY = """
             </div>
         </div>
     </div>
-    
-    <!-- RECOVERY MODAL -->
-    <div class="overlay" id="recoveryModal" style="display:none;">
-        <div class="box" style="width:500px; text-align:left;">
-            <h3 style="margin-top:0; color:var(--warn);">⚠️ EMERGENCY RECOVERY</h3>
-            <p>If your server crashes or you get locked out, SSH in and run this command to install Safe Mode.</p>
-            <div class="install-cmd" id="recoveryCmd">curl -sL {{ installer_url.replace("install.sh", "recovery.sh") }} | sudo bash</div>
-            <div style="display:flex; gap:10px; justify-content:flex-end;">
-                <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('recoveryModal').style.display='none'">CLOSE</button>
-                <button class="btn" onclick="copyRecovery()">COPY</button>
-            </div>
-        </div>
-    </div>
 
     <!-- AUTO-UPDATE BANNER -->
     <div id="update-banner">
@@ -731,19 +718,6 @@ SCRIPT = """
 
         function copyInstall() {
             const txt = document.getElementById('installCmd').innerText;
-            if(navigator.clipboard) {
-                navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
-            } else {
-                prompt("Copy this:", txt);
-            }
-        }
-        
-        function openRecovery() {
-            document.getElementById('recoveryModal').style.display = 'flex';
-        }
-
-        function copyRecovery() {
-            const txt = document.getElementById('recoveryCmd').innerText;
             if(navigator.clipboard) {
                 navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
             } else {
@@ -1183,6 +1157,8 @@ def get_installer():
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
 DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
+# Fix permissions for the SUDO_USER
+chown ${{SUDO_USER:-$USER}} "$DIR/nexus_controller.py"
 cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
 [Unit]\nDescription=Nexus Controller\nAfter=network.target
 [Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
