@@ -18,15 +18,15 @@ app = Flask(__name__)
 
 # --- CONFIGURATION ---
 PORT = 5000
-VERSION = "5.6.4 (Write Fix)"
+VERSION = "5.6.5 (Stability Patch)"
 PASSWORD = "nexus"  # <--- CHANGE THIS PASSWORD!
-app.secret_key = "nexus-write-fix-secure-key-v5-5-1"
+app.secret_key = "nexus-stability-secure-key-v5-6"
 
 # --- MINECRAFT CONFIGURATION ---
 MC_SCREEN_NAME = "minecraft"
 MC_PATH = "/opt/minecraft-java-server"
 # Set to "auto" to guess, or the specific user (e.g. "minecraft")
-MC_USER = "auto" 
+MC_USER = "auto"
 
 # --- METADATA ---
 DEVELOPER = "Andy71uk"
@@ -41,15 +41,6 @@ GITHUB_INSTALLER_URL = GITHUB_RAW_URL.replace("nexus_controller.py", "install.sh
 CLIENTS = {}
 
 # --- Helper Functions ---
-def get_os_from_ua(ua):
-    ua = ua.lower()
-    if 'windows' in ua: return 'Windows'
-    if 'android' in ua: return 'Android'
-    if 'iphone' in ua: return 'iOS'
-    if 'macintosh' in ua: return 'macOS'
-    if 'linux' in ua: return 'Linux'
-    return 'Unknown'
-
 def get_file_path():
     return os.path.abspath(__file__)
 
@@ -66,13 +57,21 @@ def safe_write_file(path, content):
             with open(tmp_path, 'w') as f:
                 f.write(content)
             subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
-            # Try to fix ownership to current user to avoid future sudo needs
             user = os.getenv('USER')
             if user: subprocess.run(f"sudo chown {user} {path}", shell=True)
             return True
         except Exception as e:
             logging.error(f"Safe write failed: {e}")
             return False
+
+def get_os_from_ua(ua):
+    ua = ua.lower()
+    if 'windows' in ua: return 'Windows'
+    if 'android' in ua: return 'Android'
+    if 'iphone' in ua: return 'iOS'
+    if 'macintosh' in ua: return 'macOS'
+    if 'linux' in ua: return 'Linux'
+    return 'Unknown'
 
 def get_host_info():
     info = {}
@@ -160,22 +159,17 @@ def perform_health_check():
 # --- HELPER: Find Minecraft User ---
 def get_mc_process_owner():
     try:
-        pids = []
-        try:
-            pids = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip().split()
-        except: pass
+        # Find PID of server.jar
+        pid = subprocess.check_output("pgrep -f server.jar", shell=True).decode().strip()
+        # Handle multiple PIDs (newlines)
+        if '\n' in pid: pid = pid.split('\n')[0]
         
-        if not pids:
-            try:
-                pids = subprocess.check_output("pgrep java", shell=True).decode().strip().split()
-            except: pass
-
-        if pids:
-            pid = pids[0]
+        if pid:
+            # Get owner of that PID
             owner = subprocess.check_output(f"ps -o user= -p {pid}", shell=True).decode().strip()
             return owner, pid
     except: pass
-    return "Unknown", None
+    return None, None
 
 def resolve_mc_user():
     if MC_USER != "auto":
@@ -186,19 +180,18 @@ def resolve_mc_user():
         return owner
     return "root"
 
-def send_screen_cmd(cmd):
-    user = resolve_mc_user()
-    screen_cmd = f'screen -S {MC_SCREEN_NAME} -p 0 -X stuff "{cmd}\r"'
-    
-    if user != "root":
-        final_cmd = f"sudo -u {user} {screen_cmd}"
-    else:
-        final_cmd = screen_cmd
-        
-    subprocess.run(final_cmd, shell=True)
-
 # --- HTML Frontend ---
-STYLE_CSS = """
+
+HTML_TOP = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS | Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
+"""
+
+STYLE = """
 <style>
     :root { --bg: #0b1120; --panel: #1e293b; --text: #e2e8f0; --prim: #6366f1; --green: #22c55e; --red: #ef4444; --warn: #eab308; }
     body { background: var(--bg); color: var(--text); font-family: 'Rajdhani', sans-serif; margin: 0; padding: 10px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -275,18 +268,8 @@ STYLE_CSS = """
 </style>
 """
 
-HTML_HEADER = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEXUS | Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@500&display=swap" rel="stylesheet">
-{STYLE_CSS}
-</head>
-"""
-
 BODY = """
+</head>
 <body>
     {% if not logged_in %}
     <div class="overlay">
@@ -515,6 +498,19 @@ BODY = """
             </div>
         </div>
     </div>
+    
+    <!-- RECOVERY MODAL -->
+    <div class="overlay" id="recoveryModal" style="display:none;">
+        <div class="box" style="width:500px; text-align:left;">
+            <h3 style="margin-top:0; color:var(--warn);">⚠️ EMERGENCY RECOVERY</h3>
+            <p>If your server crashes or you get locked out, SSH in and run this command to install Safe Mode.</p>
+            <div class="install-cmd" id="recoveryCmd">curl -sL {{ installer_url.replace("install.sh", "recovery.sh") }} | sudo bash</div>
+            <div style="display:flex; gap:10px; justify-content:flex-end;">
+                <button class="btn" style="background:transparent; border:1px solid #555;" onclick="document.getElementById('recoveryModal').style.display='none'">CLOSE</button>
+                <button class="btn" onclick="copyRecovery()">COPY</button>
+            </div>
+        </div>
+    </div>
 
     <!-- AUTO-UPDATE BANNER -->
     <div id="update-banner">
@@ -536,7 +532,9 @@ BODY = """
             <p style="color:#94a3b8; font-size:0.9rem;">Reloading dashboard automatically...</p>
         </div>
     </div>
+"""
 
+SCRIPT = """
     <script>
         function view(id, el) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -733,6 +731,19 @@ BODY = """
 
         function copyInstall() {
             const txt = document.getElementById('installCmd').innerText;
+            if(navigator.clipboard) {
+                navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
+            } else {
+                prompt("Copy this:", txt);
+            }
+        }
+        
+        function openRecovery() {
+            document.getElementById('recoveryModal').style.display = 'flex';
+        }
+
+        function copyRecovery() {
+            const txt = document.getElementById('recoveryCmd').innerText;
             if(navigator.clipboard) {
                 navigator.clipboard.writeText(txt).then(()=>alert("Copied!"));
             } else {
@@ -1167,13 +1178,11 @@ c=input("1.Reset Pass 2.Factory Reset: "); r() if c=='1' else f() if c=='2' else
 def get_installer():
     try:
         with open(__file__, 'r') as f: current_code = f.read()
-        # UPDATED: Installer now fixes permissions immediately after creation
+        # UPDATED: Installer now sets up nexus_controller.service and nexus_controller.py
         bash_script = f"""#!/bin/bash
 if [ "$EUID" -ne 0 ]; then echo "Run as root"; exit 1; fi
 if command -v apt-get &> /dev/null; then apt-get update -qq && apt-get install -y python3 python3-flask; fi
 DIR=$(pwd); cat << 'PY_EOF' > "$DIR/nexus_controller.py"\n{current_code}\nPY_EOF
-# Fix permissions for the SUDO_USER
-chown ${{SUDO_USER:-$USER}} "$DIR/nexus_controller.py"
 cat << SVC_EOF > "/etc/systemd/system/nexus_controller.service"
 [Unit]\nDescription=Nexus Controller\nAfter=network.target
 [Service]\nUser=${{SUDO_USER:-$USER}}\nWorkingDirectory=$DIR\nExecStart=/usr/bin/python3 $DIR/nexus_controller.py\nRestart=always\nEnvironment=PYTHONUNBUFFERED=1
