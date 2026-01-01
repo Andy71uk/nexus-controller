@@ -46,6 +46,8 @@ def get_file_path():
 
 def safe_write_file(path, content):
     """Writes file, using sudo fallback if permission denied."""
+    if "../" in path or "..\\" in path:
+        raise Exception("Invalid file path")
     try:
         with open(path, 'w') as f:
             f.write(content)
@@ -54,6 +56,8 @@ def safe_write_file(path, content):
         try:
             # Fallback: Write to temp and sudo mv
             tmp_path = path + ".tmp"
+            if "../" in tmp_path or "..\\" in tmp_path:
+                raise Exception("Invalid file path")
             with open(tmp_path, 'w') as f:
                 f.write(content)
             subprocess.run(f"sudo mv {tmp_path} {path}", shell=True, check=True)
